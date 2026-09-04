@@ -1,0 +1,26 @@
+# 이 파일을 terraform.tfvars로 복사한 뒤 실제 값으로 채운다.
+# cp terraform.tfvars.example terraform.tfvars
+
+# 이 저장소를 복제해서 배포할 때 반드시 바꿔야 하는 값들
+repo_url = "https://github.com/HaeDalWang/msp-team.git"
+repo_ref = "main"
+
+# 계정/리전이 다르면 여기만 바꾼다 (같은 계정에 여러 환경을 두려면 project_name도 바꿀 것)
+aws_region   = "ap-northeast-2"
+project_name = "msp-weekly-review"
+
+# 비밀값 — scripts/quickstart.sh를 쓰면 이 두 값은 자동 생성된다. 직접 쓸 경우:
+#   postgres_password: 임의의 강력한 비밀번호
+#   session_secret:     openssl rand -hex 32 로 생성
+postgres_password = "REPLACE_ME"
+session_secret     = "REPLACE_ME"
+
+# Slack OAuth. 비워두면 로그인 없이 배포된다(로컬 개발/데모용).
+slack_client_id       = ""
+slack_client_secret   = ""
+allowed_slack_team_id = ""
+
+# 선택
+instance_type = "t3.medium"
+ssh_key_name  = ""
+public_domain = ""
