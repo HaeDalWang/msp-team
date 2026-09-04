@@ -1,0 +1,23 @@
+{
+  "parts": [
+    { "id": "leaf", "name": "Leaf", "color": "#f6a612" },
+    { "id": "tiger", "name": "Tiger", "color": "#d76a20" },
+    { "id": "dragon", "name": "Dragon", "color": "#986ce3" }
+  ],
+  "users": [
+    { "id": "jo-wonkeun", "name": "조원근", "part": null, "role": "lead", "slackUserId": "U5SSTMDGE" },
+    { "id": "lee-juyeop", "name": "이주엽", "part": "Leaf", "slackUserId": "U01HU325LF5" },
+    { "id": "jeong-janghun", "name": "정장훈", "part": "Leaf", "slackUserId": "U04JKV9C7KR" },
+    { "id": "kim-ihyeon", "name": "김이현", "part": "Leaf", "slackUserId": "U064BVBDZJN" },
+    { "id": "im-jonghyeon", "name": "임종현", "part": "Leaf", "slackUserId": "U07E2S0038Q" },
+    { "id": "kim-beomjung", "name": "김범중", "part": "Tiger", "slackUserId": "U02DNAQPN20" },
+    { "id": "kim-seongho", "name": "김성호", "part": "Tiger", "slackUserId": "U02DUP0CZSM" },
+    { "id": "bae-seungdo", "name": "배승도", "part": "Tiger", "role": "admin", "slackUserId": "U043L4CPVJ4" },
+    { "id": "seo-chaeun", "name": "서채운", "part": "Tiger", "slackUserId": "U048Y2HUY1H" },
+    { "id": "lee-yongtae", "name": "이용태", "part": "Dragon", "slackUserId": "U03TRQ0B0UW" },
+    { "id": "song-minseok", "name": "송민석", "part": "Dragon", "slackUserId": "U06S5GG1ANP" },
+    { "id": "gwon-habin", "name": "권하빈", "part": "Dragon", "slackUserId": "U046BCVN4CF" },
+    { "id": "jo-suhyeon", "name": "조수현", "part": "Dragon", "slackUserId": "U06JTKYS0QM" },
+    { "id": "jeong-jiwoo", "name": "정지우", "part": "Dragon", "slackUserId": "U042ZFFQEBE" }
+  ]
+}

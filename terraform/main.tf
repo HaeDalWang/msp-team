@@ -102,6 +102,11 @@ resource "aws_iam_role" "app" {
   })
 }
 
+resource "aws_iam_role_policy_attachment" "app_ssm" {
+  role       = aws_iam_role.app.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_iam_role_policy" "app_s3_backup" {
   name = "${var.project_name}-s3-backup"
   role = aws_iam_role.app.id
@@ -142,7 +147,7 @@ resource "aws_instance" "app" {
   })
 
   root_block_device {
-    volume_size = 20
+    volume_size = 30 # al2023 AMI 스냅샷이 30GB라 이보다 작으면 RunInstances가 거부된다.
     volume_type = "gp3"
   }
 
