@@ -1,0 +1,13 @@
+{
+  "parts": [
+    { "id": "part-tiger", "name": "Tiger" }
+  ],
+  "users": [
+    {
+      "id": "usr-example",
+      "name": "홍길동",
+      "part": "Tiger",
+      "role": "engineer"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "msp-weekly-review",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "node src/server.mjs"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "jose": "^6.1.0",
+    "pg": "^8.16.3"
+  }
+}

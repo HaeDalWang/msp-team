@@ -1,0 +1,38 @@
+name: msp-weekly-review
+
+services:
+  app:
+    build: .
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://msp:${POSTGRES_PASSWORD}@db:5432/msp
+      SEED_FILE: /app/seed.json
+      SLACK_CLIENT_ID: ${SLACK_CLIENT_ID:-}
+      SLACK_CLIENT_SECRET: ${SLACK_CLIENT_SECRET:-}
+      SLACK_REDIRECT_URI: ${SLACK_REDIRECT_URI:-http://localhost:3000/auth/slack/callback}
+      SESSION_SECRET: ${SESSION_SECRET}
+      ALLOWED_SLACK_TEAM_ID: ${ALLOWED_SLACK_TEAM_ID:-}
+    volumes:
+      - ./seed.json:/app/seed.json:ro
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_DB: msp
+      POSTGRES_USER: msp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U msp -d msp"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres-data:
