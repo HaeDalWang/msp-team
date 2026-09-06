@@ -15,6 +15,9 @@ set -euo pipefail
 [[ ${#SESSION_SECRET} -ge 32 ]] || { echo 'SESSION_SECRET은 32자 이상이어야 합니다.' >&2; exit 1; }
 app_dir=/opt/msp-weekly-review
 cd "$app_dir"
+# A legacy HTTP deployment may export APP_PORT=80 before this script runs.
+# Caddy owns host port 80 in production, so never inherit that host binding.
+unset APP_PORT
 if [[ -e .env ]]; then
   echo '기존 .env가 있습니다. 기존 설정을 보존하고 docker compose up --build -d --wait를 사용하세요.' >&2
   exit 1
