@@ -1,8 +1,9 @@
 // 원본 prototype(src/ManagementViews.tsx CustomerManagementView)의 DOM 구조를 그대로 옮긴 것.
 // 실제 PostgreSQL API(GET/POST /api/customers)에 연결되어 있으며, 실패 시에만 mock으로 fallback한다.
-// 고객사 추가는 본인 카럼 또는 admin·lead만 가능하다(서버도 동일 규칙으로 재검증함).
+// 담당 고객사는 엔지니어들이 서로 자주 넘겨받는 관계라, 로그인한 사람 누구나 어떤 담당자 칸에도
+// 추가할 수 있다(서버도 로그인 여부만 검증하고 소유자 일치는 요구하지 않음).
 import { icon } from '../icons.js'
-import { isSelfOrAdminOrLead } from '../session.js'
+import { session } from '../session.js'
 
 const mockOwners = [
   { userId: 'lee-juyeop', name: '이주엽', part: 'Leaf', customers: [
@@ -69,7 +70,7 @@ export function renderCustomers() {
     <div class="owner-board">
       ${owners.map((owner) => `<section class="owner-column">
         <header><div><span class="part-badge">${owner.part ?? '무소속'}</span><h2>${owner.name}</h2></div><span>${owner.customers.length}개</span></header>
-        ${isSelfOrAdminOrLead(owner.userId) ? `<button class="add-customer" data-add-customer="${owner.userId}">${icon('Plus', 15)} 담당 고객사 추가</button>` : ''}
+        ${session.user ? `<button class="add-customer" data-add-customer="${owner.userId}">${icon('Plus', 15)} 담당 고객사 추가</button>` : ''}
         ${state.addOpen === owner.userId ? `<form class="quick-add-customer" data-add-form="${owner.userId}">
           <input aria-label="고객사명" placeholder="고객사명" value="${state.newName}" id="new-customer-name">
           <input aria-label="서비스 등급" placeholder="서비스 등급 (쉼표로 구분)" value="${state.newServices}" id="new-customer-services">
@@ -81,7 +82,16 @@ export function renderCustomers() {
             <h3>${customer.name}</h3>
             <div class="customer-meta">${icon('Clock', 14)}<span>${formatSince(customer.since)} 담당 시작</span></div>
             ${customer.note ? `<p>${customer.note}</p>` : ''}
-            <footer><span>주담당 ${owner.name}</span><button aria-label="${customer.name} 수정">${icon('Pencil', 15)}</button></footer>
+            <footer>
+              <span>주담당 ${owner.name}</span>
+              ${session.user ? `<div class="managed-customer-actions">
+                <select aria-label="${customer.name} 담당자 변경" data-reassign="${customer.id}">
+                  <option value="">담당자 이동</option>
+                  ${state.owners.filter((candidate) => candidate.userId !== owner.userId).map((candidate) => `<option value="${candidate.userId}">${candidate.name}</option>`).join('')}
+                </select>
+                <button aria-label="${customer.name} 삭제" data-remove-customer="${customer.id}">${icon('Trash2', 15)}</button>
+              </div>` : ''}
+            </footer>
           </article>`).join('')}
         </div>
       </section>`).join('')}
@@ -111,6 +121,26 @@ export function bindCustomers(root, rerender) {
         body: JSON.stringify({ name, userId, services, since: new Date().toISOString().slice(0, 10), note: '' }),
       })
       state.addOpen = null
+      await loadCustomers()
+    } catch { /* API 실패 시 목록은 이전 상태를 유지한다 */ }
+    rerender()
+  }))
+  root.querySelectorAll('[data-remove-customer]').forEach((btn) => btn.addEventListener('click', async () => {
+    if (!confirm('이 고객사를 목록에서 삭제할까요?')) return
+    try {
+      await fetch(`/api/customers/${btn.dataset.removeCustomer}`, { method: 'DELETE' })
+      await loadCustomers()
+    } catch { /* API 실패 시 목록은 이전 상태를 유지한다 */ }
+    rerender()
+  }))
+  root.querySelectorAll('[data-reassign]').forEach((select) => select.addEventListener('change', async (event) => {
+    const newUserId = event.target.value
+    if (!newUserId) return
+    try {
+      await fetch(`/api/customers/${select.dataset.reassign}`, {
+        method: 'PUT', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ userId: newUserId }),
+      })
       await loadCustomers()
     } catch { /* API 실패 시 목록은 이전 상태를 유지한다 */ }
     rerender()

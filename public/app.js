@@ -38,6 +38,7 @@ const state = {
   reviewEnd: '2026-08-31',
   selectedName: null,
   dateOpen: false,
+  settingsOpen: false,
   compact: false,
   light: false,
   query: '',
@@ -137,10 +138,16 @@ function topbar() {
       ${tabs.map(([id, iconName, label]) => `<button data-view="${id}" class="${state.view === id ? 'active' : ''}">${icon(iconName, 16)} ${label}</button>`).join('')}
     </nav>
     <label class="searchbox">${icon('Search', 16)}<input id="query-input" value="${escapeAttr(state.query)}" placeholder="고객사 · 엔지니어 · 키워드"><kbd>/</kbd></label>
-    <span class="current-user-chip">${icon('User', 15)} ${escapeHtml(authState.user?.name ?? '')}</span>
-    <button class="icon-button" id="theme-toggle" aria-label="라이트/다크 테마">${icon(state.light ? 'Moon' : 'Sun', 17)}</button>
-    <button class="slack-button" id="slack-share">${icon('Share2', 16)} Slack 공유</button>
-    <button class="icon-button" id="auth-logout" aria-label="로그아웃" title="${escapeAttr(authState.user?.name ?? '')}님 로그아웃">${icon('LogOut', 16)}</button>
+    <div class="settings-menu">
+      <button class="icon-button" id="settings-toggle" aria-label="설정" aria-expanded="${state.settingsOpen}">${icon('Settings', 17)}</button>
+      ${state.settingsOpen ? `<div class="settings-popover">
+        <div class="settings-user"><span class="current-user-chip">${icon('User', 15)} ${escapeHtml(authState.user?.name ?? '')}</span></div>
+        <button id="theme-toggle">${icon(state.light ? 'Moon' : 'Sun', 16)} ${state.light ? '다크 모드' : '라이트 모드'}</button>
+        <button id="density-toggle">${icon('Maximize2', 16)} ${state.compact ? '보통 보기' : '컴팩트 보기'}</button>
+        <button id="slack-share">${icon('Share2', 16)} Slack 공유</button>
+        <button id="auth-logout" class="settings-logout">${icon('LogOut', 16)} ${escapeHtml(authState.user?.name ?? '')}님 로그아웃</button>
+      </div>` : ''}
+    </div>
   </header>`
 }
 
@@ -168,7 +175,6 @@ function weekbar() {
     <button class="today-button" id="week-today" ${state.reviewEnd === currentEnd ? 'disabled' : ''}>${icon('RotateCcw', 15)} 이번 주</button>
     <div class="week-spacer"></div>
     ${state.view === 'review' ? `<button class="output-button" id="output-open" aria-label="월간 Output">${icon('FileText', 15)} 월간 Output</button>` : ''}
-    <button class="${state.compact ? 'density-button active' : 'density-button'}" id="density-toggle" aria-label="컴팩트 모드">${icon('Maximize2', 15)} ${state.compact ? '보통 보기' : '컴팩트'}</button>
   </section>`
 }
 
@@ -375,9 +381,15 @@ window.addEventListener('hashchange', () => {
   if (view !== state.view) switchView(view)
 })
 
+document.addEventListener('click', () => {
+  if (state.settingsOpen) { state.settingsOpen = false; render() }
+})
+
 function bindEvents(root) {
   root.querySelectorAll('[data-view]').forEach((btn) => btn.addEventListener('click', () => switchView(btn.dataset.view)))
   root.querySelector('#query-input')?.addEventListener('input', (event) => { state.query = event.target.value; render(); root.querySelector('#query-input')?.focus() })
+  root.querySelector('#settings-toggle')?.addEventListener('click', (event) => { event.stopPropagation(); state.settingsOpen = !state.settingsOpen; render() })
+  root.querySelector('.settings-popover')?.addEventListener('click', (event) => event.stopPropagation())
   root.querySelector('#theme-toggle')?.addEventListener('click', () => { state.light = !state.light; render() })
   root.querySelector('#slack-share')?.addEventListener('click', () => showToast('Slack 공유 링크를 복사했습니다.'))
   root.querySelector('#week-prev')?.addEventListener('click', () => { state.reviewEnd = moveReviewWeek(state.reviewEnd, -1); state.dateOpen = false; ensureReviewEntries() })

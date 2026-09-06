@@ -51,3 +51,36 @@ test('POST /api/customers creates a customer and assigns it to an engineer', asy
     await new Promise((resolve) => server.close(resolve))
   }
 })
+
+test('DELETE /api/customers/:id removes the customer and its assignments', async () => {
+  const calls = []
+  const database = { query: async (sql, values = []) => { calls.push({ sql, values }); return { rows: [] } } }
+  const server = createApp(database).listen(0)
+  await new Promise((resolve) => server.once('listening', resolve))
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/customers/9`, { method: 'DELETE' })
+    assert.equal(response.status, 204)
+    assert.ok(calls.some((call) => call.sql.includes('DELETE FROM customers') && call.values[0] === '9'))
+  } finally {
+    await new Promise((resolve) => server.close(resolve))
+  }
+})
+
+test('PUT /api/customers/:id updates services, note, and reassigns the owner', async () => {
+  const calls = []
+  const database = { query: async (sql, values = []) => { calls.push({ sql, values }); return { rows: [] } } }
+  const server = createApp(database).listen(0)
+  await new Promise((resolve) => server.once('listening', resolve))
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/customers/9`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ userId: 'kim-beomjung', services: ['Enterprise Care'], note: '인수인계 완료' }),
+    })
+    assert.equal(response.status, 204)
+    assert.ok(calls.some((call) => call.sql.includes('UPDATE customers')))
+    assert.ok(calls.some((call) => call.sql.includes('DELETE FROM customer_assignments')))
+    assert.ok(calls.some((call) => call.sql.includes('INSERT INTO customer_assignments')))
+  } finally {
+    await new Promise((resolve) => server.close(resolve))
+  }
+})

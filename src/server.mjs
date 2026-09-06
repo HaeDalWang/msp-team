@@ -2,7 +2,7 @@ import express from 'express'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { connectDatabase } from './db.mjs'
-import { registerAuthRoutes, requireRole, requireSelfOrRole } from './auth.mjs'
+import { registerAuthRoutes, requireRole, requireSelfOrRole, requireSession } from './auth.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -17,6 +17,9 @@ export function createApp(pool, env = process.env) {
   const adminOnly = authEnabled ? requireRole(env, ['admin']) : noop
   const adminOrLead = authEnabled ? requireRole(env, ['admin', 'lead']) : noop
   const selfOrAdminOrLead = (userIdFrom) => authEnabled ? requireSelfOrRole(env, ['admin', 'lead'], userIdFrom) : noop
+  // 담당 고객사는 엔지니어들이 서로 자주 넘겨주고 받는 관계라, 본인 소유 여부와 무관하게
+  // 로그인한 사람(seed에 등록된 engineer/lead/executive/admin) 누구나 추가·수정할 수 있다.
+  const requireAnySession = authEnabled ? requireSession(env) : noop
   app.get('/api/bootstrap', async (_request, response, next) => {
     try {
       const result = await pool.query('SELECT u.id, u.name, p.name AS part, u.role FROM users u LEFT JOIN parts p ON p.id = u.part_id ORDER BY p.name NULLS FIRST, u.name')
@@ -83,7 +86,7 @@ export function createApp(pool, env = process.env) {
       next(error)
     }
   })
-  app.post('/api/customers', selfOrAdminOrLead((request) => request.body?.userId), async (request, response, next) => {
+  app.post('/api/customers', requireAnySession, async (request, response, next) => {
     const { name, userId, services, since, note } = request.body
     if (typeof name !== 'string' || !name.trim() || typeof userId !== 'string' || !userId.trim()) return response.status(400).json({ error: 'name과 userId는 필수입니다.' })
     try {
@@ -91,6 +94,27 @@ export function createApp(pool, env = process.env) {
       const id = created.rows[0].id
       await pool.query('INSERT INTO customer_assignments (customer_id, user_id) VALUES ($1, $2)', [id, userId])
       response.status(201).json({ id })
+    } catch (error) {
+      next(error)
+    }
+  })
+  // 담당 고객사 수정/삭제도 추가와 동일하게 로그인한 사람 누구나 가능하다(엔지니어끼리 담당을 자주 넘김).
+  app.put('/api/customers/:id', requireAnySession, async (request, response, next) => {
+    const { userId, services, note, since } = request.body
+    if (typeof userId !== 'string' || !userId.trim()) return response.status(400).json({ error: 'userId는 필수입니다.' })
+    try {
+      await pool.query('UPDATE customers SET services = COALESCE($1, services), note = COALESCE($2, note), since = COALESCE($3, since) WHERE id = $4', [Array.isArray(services) ? services : null, note ?? null, since ?? null, request.params.id])
+      await pool.query('DELETE FROM customer_assignments WHERE customer_id = $1', [request.params.id])
+      await pool.query('INSERT INTO customer_assignments (customer_id, user_id) VALUES ($1, $2)', [request.params.id, userId])
+      response.status(204).end()
+    } catch (error) {
+      next(error)
+    }
+  })
+  app.delete('/api/customers/:id', requireAnySession, async (request, response, next) => {
+    try {
+      await pool.query('DELETE FROM customers WHERE id = $1', [request.params.id])
+      response.status(204).end()
     } catch (error) {
       next(error)
     }
