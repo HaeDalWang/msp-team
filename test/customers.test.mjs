@@ -5,10 +5,16 @@ import { createApp } from '../src/server.mjs'
 test('GET /api/customers groups customers under their assigned engineer', async () => {
   const database = {
     query: async (sql) => {
+      if (sql.includes('FROM users')) {
+        return { rows: [
+          { id: 'kim-beomjung', name: '김범중', part: 'Tiger' },
+          { id: 'bae-seungdo', name: '배승도', part: 'Tiger' },
+        ] }
+      }
       if (sql.includes('FROM customer_assignments')) {
         return { rows: [
-          { user_id: 'kim-beomjung', name: '김범중', part: 'Tiger', customer_id: 1, customer_name: '케이비자산운용_DI', since: '2022-06-01', services: ['Advanced Care'], note: '' },
-          { user_id: 'bae-seungdo', name: '배승도', part: 'Tiger', customer_id: 2, customer_name: '이동의즐거움', since: '2022-09-01', services: ['MCR', 'Enterprise Care'], note: null },
+          { user_id: 'kim-beomjung', customer_id: 1, customer_name: '케이비자산운용_DI', since: '2022-06-01', services: ['Advanced Care'], note: '' },
+          { user_id: 'bae-seungdo', customer_id: 2, customer_name: '이동의즐거움', since: '2022-09-01', services: ['MCR', 'Enterprise Care'], note: null },
         ] }
       }
       return { rows: [] }
@@ -28,6 +34,35 @@ test('GET /api/customers groups customers under their assigned engineer', async 
         { id: 2, name: '이동의즐거움', since: '2022-09-01', services: ['MCR', 'Enterprise Care'], note: '' },
       ] },
     ])
+  } finally {
+    await new Promise((resolve) => server.close(resolve))
+  }
+})
+
+test('GET /api/customers includes engineers who have no customer assigned yet', async () => {
+  const database = {
+    query: async (sql) => {
+      if (sql.includes('FROM users')) {
+        return { rows: [
+          { id: 'kim-beomjung', name: '김범중', part: 'Tiger' },
+          { id: 'jeong-jiwoo', name: '정지우', part: 'Dragon' },
+        ] }
+      }
+      if (sql.includes('FROM customer_assignments')) {
+        return { rows: [
+          { user_id: 'kim-beomjung', customer_id: 1, customer_name: '케이비자산운용_DI', since: '2022-06-01', services: ['Advanced Care'], note: '' },
+        ] }
+      }
+      return { rows: [] }
+    },
+  }
+  const server = createApp(database).listen(0)
+  await new Promise((resolve) => server.once('listening', resolve))
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/customers`)
+    const body = await response.json()
+    assert.equal(response.status, 200)
+    assert.deepEqual(body.owners.find((owner) => owner.userId === 'jeong-jiwoo'), { userId: 'jeong-jiwoo', name: '정지우', part: 'Dragon', customers: [] })
   } finally {
     await new Promise((resolve) => server.close(resolve))
   }

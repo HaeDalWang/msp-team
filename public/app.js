@@ -39,7 +39,7 @@ const state = {
   selectedName: null,
   dateOpen: false,
   settingsOpen: false,
-  compact: false,
+  fontScale: Number(localStorage.getItem('msp-font-scale')) || 100,
   light: false,
   query: '',
   leftOpen: true,
@@ -107,7 +107,7 @@ function emptyReview(name) {
 }
 
 function render() {
-  document.documentElement.dataset.density = state.compact ? 'compact' : 'comfortable'
+  document.documentElement.style.setProperty('--font-scale', state.fontScale / 100)
   document.documentElement.dataset.theme = state.light ? 'light' : 'dark'
   const root = document.querySelector('#root')
   if (!authState.checked) {
@@ -143,7 +143,10 @@ function topbar() {
       ${state.settingsOpen ? `<div class="settings-popover">
         <div class="settings-user"><span class="current-user-chip">${icon('User', 15)} ${escapeHtml(authState.user?.name ?? '')}</span></div>
         <button id="theme-toggle">${icon(state.light ? 'Moon' : 'Sun', 16)} ${state.light ? '다크 모드' : '라이트 모드'}</button>
-        <button id="density-toggle">${icon('Maximize2', 16)} ${state.compact ? '보통 보기' : '컴팩트 보기'}</button>
+        <div class="settings-font-scale">
+          <span>${icon('CaseSensitive', 16)} 글자 크기 <em>${state.fontScale}%</em></span>
+          <input type="range" id="font-scale-input" min="85" max="130" step="5" value="${state.fontScale}" aria-label="글자 크기">
+        </div>
         <button id="slack-share">${icon('Share2', 16)} Slack 공유</button>
         <button id="auth-logout" class="settings-logout">${icon('LogOut', 16)} ${escapeHtml(authState.user?.name ?? '')}님 로그아웃</button>
       </div>` : ''}
@@ -400,7 +403,11 @@ function bindEvents(root) {
   root.querySelector('#output-open')?.addEventListener('click', () => { state.outputOpen = true; render() })
   root.querySelector('#output-close')?.addEventListener('click', () => { state.outputOpen = false; render() })
   root.querySelector('#output-overlay')?.addEventListener('mousedown', (event) => { if (event.target === event.currentTarget) { state.outputOpen = false; render() } })
-  root.querySelector('#density-toggle')?.addEventListener('click', () => { state.compact = !state.compact; render() })
+  root.querySelector('#font-scale-input')?.addEventListener('input', (event) => {
+    state.fontScale = Number(event.target.value)
+    localStorage.setItem('msp-font-scale', String(state.fontScale))
+    render()
+  })
   root.querySelector('#left-close')?.addEventListener('click', () => { state.leftOpen = false; render() })
   root.querySelector('#left-open')?.addEventListener('click', () => { state.leftOpen = true; render() })
   root.querySelector('#right-close')?.addEventListener('click', () => { state.rightOpen = false; render() })

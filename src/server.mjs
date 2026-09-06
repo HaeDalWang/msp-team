@@ -62,24 +62,21 @@ export function createApp(pool, env = process.env) {
   })
   app.get('/api/customers', async (_request, response, next) => {
     try {
-      const result = await pool.query(
-        `SELECT u.id AS user_id, u.name, p.name AS part, c.id AS customer_id, c.name AS customer_name, c.since, c.services, c.note
+      // 담당 고객사가 아직 하나도 없는 팀원도 화면에 자기 칸이 보여야(그래야 "추가" 버튼을 누를 수 있다)
+      // 하므로, customer_assignments가 아니라 users를 기준으로 전체를 조회하고 LEFT JOIN한다.
+      const usersResult = await pool.query('SELECT u.id, u.name, p.name AS part FROM users u LEFT JOIN parts p ON p.id = u.part_id ORDER BY p.name NULLS FIRST, u.name')
+      const assignmentsResult = await pool.query(
+        `SELECT ca.user_id, c.id AS customer_id, c.name AS customer_name, c.since, c.services, c.note
          FROM customer_assignments ca
          JOIN customers c ON c.id = ca.customer_id
-         JOIN users u ON u.id = ca.user_id
-         LEFT JOIN parts p ON p.id = u.part_id
-         ORDER BY p.name NULLS FIRST, u.name, c.name`,
+         ORDER BY c.name`,
       )
-      const owners = []
-      const ownerIndex = new Map()
-      for (const row of result.rows) {
-        if (!ownerIndex.has(row.user_id)) {
-          ownerIndex.set(row.user_id, owners.length)
-          owners.push({ userId: row.user_id, name: row.name, part: row.part, customers: [] })
-        }
-        owners[ownerIndex.get(row.user_id)].customers.push({
-          id: row.customer_id, name: row.customer_name, since: row.since, services: row.services ?? [], note: row.note ?? '',
-        })
+      const owners = usersResult.rows.map((user) => ({ userId: user.id, name: user.name, part: user.part, customers: [] }))
+      const ownerIndex = new Map(owners.map((owner, index) => [owner.userId, index]))
+      for (const row of assignmentsResult.rows) {
+        const index = ownerIndex.get(row.user_id)
+        if (index === undefined) continue
+        owners[index].customers.push({ id: row.customer_id, name: row.customer_name, since: row.since, services: row.services ?? [], note: row.note ?? '' })
       }
       response.json({ owners })
     } catch (error) {
