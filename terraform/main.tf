@@ -134,16 +134,8 @@ resource "aws_instance" "app" {
   key_name               = var.ssh_key_name != "" ? var.ssh_key_name : null
 
   user_data = templatefile("${path.module}/user_data.sh.tpl", {
-    app_port              = var.app_port
-    postgres_password     = var.postgres_password
-    session_secret        = var.session_secret
-    slack_client_id       = var.slack_client_id
-    slack_client_secret   = var.slack_client_secret
-    allowed_slack_team_id = var.allowed_slack_team_id
-    slack_redirect_uri    = var.public_domain != "" ? "http://${var.public_domain}/auth/slack/callback" : "http://__EC2_PUBLIC_IP__/auth/slack/callback"
-    backup_s3_bucket      = aws_s3_bucket.backups.bucket
-    repo_url              = var.repo_url
-    repo_ref              = var.repo_ref
+    repo_url = var.repo_url
+    repo_ref = var.repo_ref
   })
 
   root_block_device {

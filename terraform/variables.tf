@@ -22,49 +22,6 @@ variable "ssh_key_name" {
   default     = ""
 }
 
-variable "app_port" {
-  description = "컨테이너 내부 애플리케이션 포트(80으로 매핑됨)"
-  type        = number
-  default     = 3000
-}
-
-variable "postgres_password" {
-  description = "PostgreSQL msp 사용자 비밀번호"
-  type        = string
-  sensitive   = true
-}
-
-variable "session_secret" {
-  description = "세션 서명용 랜덤 문자열. openssl rand -hex 32 로 생성."
-  type        = string
-  sensitive   = true
-}
-
-variable "slack_client_id" {
-  description = "Slack App Client ID. 비워두면 Slack 로그인이 비활성화된다."
-  type        = string
-  default     = ""
-}
-
-variable "slack_client_secret" {
-  description = "Slack App Client Secret"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "allowed_slack_team_id" {
-  description = "허용할 Slack workspace team_id. 비워두면 team 제한 없음."
-  type        = string
-  default     = ""
-}
-
-variable "public_domain" {
-  description = "EC2 퍼블릭 IP로 접속할 때는 비워둔다. 도메인을 붙이면 SLACK_REDIRECT_URI 계산에 사용된다."
-  type        = string
-  default     = ""
-}
-
 variable "backup_retention_days" {
   description = "S3 백업 버킷의 객체 보존 기간(일)"
   type        = number
@@ -81,3 +38,9 @@ variable "repo_ref" {
   type        = string
   default     = "main"
 }
+
+# 아래 값들은 Terraform이 직접 쓰지 않는다. terraform apply 완료 후 출력되는
+# app_public_ip를 확인한 다음, scripts/deploy-app.sh를 EC2에서 실행할 때 환경변수로
+# 넘긴다 (SLACK_REDIRECT_URI가 실제 IP/도메인을 알아야 하기 때문에 2단계로 분리함).
+# 이 변수 선언은 terraform.tfvars에 값이 있어도 에러 없이 무시되도록 남겨둔 것이 아니라,
+# deploy-app.sh 사용법을 한 곳에 문서화하기 위한 참고용 주석이다.

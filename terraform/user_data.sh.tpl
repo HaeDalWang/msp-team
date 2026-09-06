@@ -36,19 +36,8 @@ else
   git clone --depth 1 --branch "${repo_ref}" "${repo_url}" "$app_dir"
 fi
 
-cat > "$app_dir/.env" <<ENV_EOF
-POSTGRES_PASSWORD=${postgres_password}
-APP_PORT=80
-SLACK_CLIENT_ID=${slack_client_id}
-SLACK_CLIENT_SECRET=${slack_client_secret}
-SLACK_REDIRECT_URI=${slack_redirect_uri}
-SESSION_SECRET=${session_secret}
-ALLOWED_SLACK_TEAM_ID=${allowed_slack_team_id}
-BACKUP_S3_BUCKET=${backup_s3_bucket}
-ENV_EOF
-chmod 600 "$app_dir/.env"
-
-cd "$app_dir"
-# compose.yaml의 ports 매핑("$${APP_PORT}:3000")이 호스트 80번을 컨테이너 3000번(내부 PORT)에 직접 바인딩한다.
-# al2023 기본 이미지에는 iptables 커맨드가 없어 수동 PREROUTING 리다이렉트는 신뢰할 수 없다 — Docker의 표준 포트 게시로 대체.
-/usr/local/bin/docker-compose up --build -d
+# 여기서는 인프라(Docker/buildx/리포지토리)만 준비한다. .env 생성과 docker compose up은
+# 실제 퍼블릭 IP를 알아야 하는 값(SLACK_REDIRECT_URI)이 있으므로 사람이 apply 완료 후
+# terraform output으로 IP를 확인한 뒤, scripts/deploy-app.sh를 SSM Session Manager로
+# 실행해서 마무리한다. (README 참고)
+echo "[user_data] infra ready. Run scripts/deploy-app.sh via SSM to start the app." > /opt/msp-weekly-review/.infra-ready

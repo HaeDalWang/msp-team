@@ -9,18 +9,10 @@ repo_ref = "main"
 aws_region   = "ap-northeast-2"
 project_name = "msp-weekly-review"
 
-# 비밀값 — scripts/quickstart.sh를 쓰면 이 두 값은 자동 생성된다. 직접 쓸 경우:
-#   postgres_password: 임의의 강력한 비밀번호
-#   session_secret:     openssl rand -hex 32 로 생성
-postgres_password = "REPLACE_ME"
-session_secret     = "REPLACE_ME"
-
-# Slack OAuth. 비워두면 로그인 없이 배포된다(로컬 개발/데모용).
-slack_client_id       = ""
-slack_client_secret   = ""
-allowed_slack_team_id = ""
-
 # 선택
 instance_type = "t3.medium"
 ssh_key_name  = ""
-public_domain = ""
+
+# 주의: Slack Client ID/Secret, PostgreSQL 비밀번호, SESSION_SECRET은 여기 넣지 않는다.
+# terraform apply로 인프라만 만든 뒤, app_public_ip 출력값을 확인하고
+# scripts/deploy-app.sh를 SSM으로 실행할 때 환경변수로 넘긴다 (2단계 배포).
