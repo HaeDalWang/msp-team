@@ -22,6 +22,24 @@ variable "ssh_key_name" {
   default     = ""
 }
 
+variable "ssh_allowed_cidrs" {
+  description = "SSH 허용 CIDR. 기본은 SSH 닫힘, SSM 사용."
+  type        = list(string)
+  default     = []
+}
+
+variable "web_allowed_cidrs" {
+  description = "HTTP/HTTPS 허용 CIDR. 사내망 제한 시 Caddy 인증서 발급 방식도 별도 확인."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "allocate_elastic_ip" {
+  description = "DNS용 고정 IP 할당. 기존 환경에 변경을 강제하지 않도록 기본 false."
+  type        = bool
+  default     = false
+}
+
 variable "backup_retention_days" {
   description = "S3 백업 버킷의 객체 보존 기간(일)"
   type        = number

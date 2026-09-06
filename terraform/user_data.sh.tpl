@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# EC2 최초 부팅 시 1회 실행: Docker 설치 → 리포지토리 git clone → .env 생성 → docker compose up.
-# 이 스크립트만으로 EC2 한 대에서 앱+DB가 실제로 동작하는 상태가 된다.
+# EC2 최초 부팅 시 Docker 도구와 저장소만 준비. 앱은 2단계에서 기동한다.
 set -euo pipefail
 
-dnf install -y docker git
+dnf install -y docker git file
 systemctl enable --now docker
 usermod -aG docker ec2-user
 
 mkdir -p /usr/libexec/docker/cli-plugins
 
-curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+curl --fail -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
   -o /usr/local/bin/docker-compose
 chmod +x /usr/local/bin/docker-compose
 ln -sf /usr/local/bin/docker-compose /usr/libexec/docker/cli-plugins/docker-compose
@@ -20,7 +19,7 @@ case "$buildx_arch" in
   x86_64) buildx_arch="amd64" ;;
   aarch64) buildx_arch="arm64" ;;
 esac
-curl -SL "https://github.com/docker/buildx/releases/download/v0.19.2/buildx-v0.19.2.linux-$${buildx_arch}" \
+curl --fail -SL "https://github.com/docker/buildx/releases/download/v0.19.2/buildx-v0.19.2.linux-$${buildx_arch}" \
   -o /usr/libexec/docker/cli-plugins/docker-buildx
 chmod +x /usr/libexec/docker/cli-plugins/docker-buildx
 # 다운로드가 실패하면(리다이렉트로 받은 HTML 등) ELF가 아니므로 여기서 조기에 실패시킨다.
@@ -28,11 +27,8 @@ file /usr/libexec/docker/cli-plugins/docker-buildx | grep -q ELF
 
 app_dir=/opt/msp-weekly-review
 if [ -d "$app_dir/.git" ]; then
-  git -C "$app_dir" fetch --depth 1 origin "${repo_ref}"
-  git -C "$app_dir" checkout "${repo_ref}"
-  git -C "$app_dir" reset --hard "origin/${repo_ref}"
+  echo '[user_data] Existing checkout preserved; update manually with git pull --ff-only.'
 else
-  rm -rf "$app_dir"
   git clone --depth 1 --branch "${repo_ref}" "${repo_url}" "$app_dir"
 fi
 

@@ -1,0 +1,8 @@
+.git
+.env
+.env.*
+terraform
+node_modules
+test
+*.dump
+*.log

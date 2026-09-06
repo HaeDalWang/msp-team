@@ -1,12 +1,14 @@
 import crypto from 'node:crypto'
+import { createRemoteJWKSet, jwtVerify } from 'jose'
 
-const STATE_COOKIE = 'slack_oauth_state'
 const SESSION_COOKIE = 'msp_session'
-const SESSION_MAX_AGE_SECONDS = 60 * 60 * 12
-
-function sign(value, secret) {
-  return crypto.createHmac('sha256', secret).update(value).digest('base64url')
-}
+const STATE_COOKIE = 'slack_oauth_state'
+const SESSION_AGE = 12 * 60 * 60
+const slackKeys = createRemoteJWKSet(
+  new URL('https://slack.com/openid/connect/keys'),
+)
+const sign = (value, secret) =>
+  crypto.createHmac('sha256', secret).update(value).digest('base64url')
 
 export function createSessionToken(payload, secret) {
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url')
@@ -14,123 +16,202 @@ export function createSessionToken(payload, secret) {
 }
 
 export function verifySessionToken(token, secret) {
-  if (!token) return null
-  const [body, signature] = token.split('.')
-  if (!body || !signature || sign(body, secret) !== signature) return null
+  if (typeof token !== 'string' || !secret) return null
+  const pieces = token.split('.')
+  if (pieces.length !== 2) return null
+  const [body, signature] = pieces
+  const expected = Buffer.from(sign(body, secret))
+  const actual = Buffer.from(signature)
+  if (
+    expected.length !== actual.length ||
+    !crypto.timingSafeEqual(expected, actual)
+  )
+    return null
   try {
-    return JSON.parse(Buffer.from(body, 'base64url').toString('utf8'))
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString())
+    return payload &&
+      typeof payload.userId === 'string' &&
+      Number.isFinite(payload.exp) &&
+      payload.exp > Date.now()
+      ? payload
+      : null
   } catch {
     return null
   }
 }
 
-function parseCookies(header) {
-  const cookies = {}
-  for (const part of (header ?? '').split(';')) {
-    const [key, ...rest] = part.trim().split('=')
-    if (key) cookies[key] = decodeURIComponent(rest.join('='))
+function cookies(header = '') {
+  const result = Object.create(null)
+  for (const part of header.split(';')) {
+    const [key, ...value] = part.trim().split('=')
+    try {
+      result[key] = decodeURIComponent(value.join('='))
+    } catch {
+      /* Ignore malformed cookie. */
+    }
   }
-  return cookies
+  return result
 }
 
-export function registerAuthRoutes(app, pool, env) {
-  const { SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, SLACK_REDIRECT_URI, SESSION_SECRET, ALLOWED_SLACK_TEAM_ID } = env
+function cookie(name, value, age, env) {
+  const secure =
+    env.NODE_ENV === 'production' ||
+    env.SLACK_REDIRECT_URI?.startsWith('https:')
+  return `${name}=${value}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${age}${secure ? '; Secure' : ''}`
+}
 
-  app.get('/auth/slack', (_request, response) => {
-    const state = crypto.randomBytes(16).toString('hex')
-    const url = new URL('https://slack.com/openid/connect/authorize')
-    url.searchParams.set('response_type', 'code')
-    url.searchParams.set('client_id', SLACK_CLIENT_ID)
-    url.searchParams.set('scope', 'openid profile email')
-    url.searchParams.set('redirect_uri', SLACK_REDIRECT_URI)
-    url.searchParams.set('state', state)
-    response.setHeader('Set-Cookie', `${STATE_COOKIE}=${state}; HttpOnly; Path=/; SameSite=Lax; Max-Age=600`)
-    response.redirect(url.toString())
-  })
-
-  app.get('/auth/slack/callback', async (request, response, next) => {
-    const cookies = parseCookies(request.headers.cookie)
-    const { code, state } = request.query
-    if (!state || !cookies[STATE_COOKIE] || state !== cookies[STATE_COOKIE]) {
-      return response.status(403).send('Slack 로그인 요청이 유효하지 않습니다. 다시 로그인해 주세요.')
-    }
-    if (typeof code !== 'string' || !code) return response.status(400).send('Slack 인증 코드가 없습니다.')
+// Refresh identity and permissions from the DB on every request, including revoked accounts.
+export function requireSession(env, pool) {
+  return async (request, response, next) => {
+    if (request.session) return next()
     try {
-      const tokenResponse = await fetch('https://slack.com/api/openid.connect.token', {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ code, client_id: SLACK_CLIENT_ID, client_secret: SLACK_CLIENT_SECRET, redirect_uri: SLACK_REDIRECT_URI }),
-      })
-      const tokenBody = await tokenResponse.json()
-      if (!tokenBody.ok) return response.status(502).send('Slack 인증에 실패했습니다.')
-      const claims = decodeIdToken(tokenBody.id_token)
-      if (ALLOWED_SLACK_TEAM_ID && claims['https://slack.com/team_id'] !== ALLOWED_SLACK_TEAM_ID) {
-        return response.status(403).send('허용되지 않은 Slack workspace입니다.')
+      const token = verifySessionToken(
+        cookies(request.headers.cookie)[SESSION_COOKIE],
+        env.SESSION_SECRET,
+      )
+      const localId =
+        env.NODE_ENV !== 'production' && !env.SLACK_CLIENT_ID
+          ? env.LOCAL_DEV_USER_ID
+          : null
+      const userId = token?.userId ?? localId
+      if (!userId)
+        return response.status(401).json({ error: '로그인이 필요합니다.' })
+      const { rows } = await pool.query(
+        'SELECT id, name, role FROM users WHERE id = $1 AND active = true',
+        [userId],
+      )
+      if (!rows[0])
+        return response
+          .status(401)
+          .json({ error: '사용할 수 없는 계정입니다. 관리자에게 문의하세요.' })
+      request.session = {
+        userId: rows[0].id,
+        name: rows[0].name,
+        role: rows[0].role,
       }
-      const slackUserId = claims.sub
-      const result = await pool.query('SELECT id, name, part_id, role FROM users WHERE slack_user_id = $1', [slackUserId])
-      const user = result.rows[0]
-      if (!user) return response.status(403).send('사전 등록된 MSP 사용자가 아닙니다. 관리자에게 등록을 요청하세요.')
-      const token = createSessionToken({ userId: user.id, name: user.name, role: user.role, exp: Date.now() + SESSION_MAX_AGE_SECONDS * 1000 }, SESSION_SECRET)
-      response.setHeader('Set-Cookie', [
-        `${STATE_COOKIE}=; Path=/; Max-Age=0`,
-        `${SESSION_COOKIE}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_MAX_AGE_SECONDS}`,
-      ])
-      response.redirect('/')
+      next()
     } catch (error) {
       next(error)
     }
-  })
-
-  app.get('/auth/logout', (_request, response) => {
-    response.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; Max-Age=0`)
-    response.redirect('/')
-  })
-
-  app.get('/api/me', (request, response) => {
-    const cookies = parseCookies(request.headers.cookie)
-    const session = verifySessionToken(cookies[SESSION_COOKIE], SESSION_SECRET)
-    if (!session || session.exp < Date.now()) return response.status(401).json({ error: '로그인이 필요합니다.' })
-    response.json({ userId: session.userId, name: session.name, role: session.role })
-  })
-}
-
-function decodeIdToken(idToken) {
-  const [, payload] = idToken.split('.')
-  return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
-}
-
-export function requireSession(env) {
-  return (request, response, next) => {
-    const cookies = parseCookies(request.headers.cookie)
-    const session = verifySessionToken(cookies[SESSION_COOKIE], env.SESSION_SECRET)
-    if (!session || session.exp < Date.now()) return response.status(401).json({ error: '로그인이 필요합니다.' })
-    request.session = session
-    next()
   }
 }
 
-// role은 seed 기준 'engineer' | 'lead' | 'executive' | 'admin' 중 하나.
-export function requireRole(env, allowedRoles) {
-  const requireAuth = requireSession(env)
-  return (request, response, next) => {
-    requireAuth(request, response, (error) => {
-      if (error) return next(error)
-      if (!allowedRoles.includes(request.session.role)) return response.status(403).json({ error: '이 작업을 수행할 권한이 없습니다.' })
-      next()
+export function requireRole(_env, roles) {
+  return (req, res, next) =>
+    roles.includes(req.session?.role)
+      ? next()
+      : res.status(403).json({ error: '이 작업을 수행할 권한이 없습니다.' })
+}
+
+export function requireSelfOrRole(_env, roles, target) {
+  return (req, res, next) =>
+    req.session?.userId === target(req) || roles.includes(req.session?.role)
+      ? next()
+      : res.status(403).json({ error: '본인 기록만 수정할 수 있습니다.' })
+}
+
+export function registerAuthRoutes(app, pool, env) {
+  if (env.SLACK_CLIENT_ID) {
+    app.get('/auth/slack', (_req, res) => {
+      const nonce = crypto.randomBytes(24).toString('hex')
+      const state = createSessionToken(
+        { userId: nonce, exp: Date.now() + 600000 },
+        env.SESSION_SECRET,
+      )
+      const url = new URL('https://slack.com/openid/connect/authorize')
+      for (const [key, value] of Object.entries({
+        response_type: 'code',
+        client_id: env.SLACK_CLIENT_ID,
+        scope: 'openid profile email',
+        redirect_uri: env.SLACK_REDIRECT_URI,
+        state,
+        nonce,
+      }))
+        url.searchParams.set(key, value)
+      res.setHeader('Set-Cookie', cookie(STATE_COOKIE, state, 600, env))
+      res.redirect(url.toString())
+    })
+    app.get('/auth/slack/callback', async (req, res, next) => {
+      const stored = cookies(req.headers.cookie)[STATE_COOKIE]
+      const state = verifySessionToken(stored, env.SESSION_SECRET)
+      res.setHeader('Set-Cookie', cookie(STATE_COOKIE, '', 0, env))
+      if (!state || req.query.state !== stored)
+        return res
+          .status(403)
+          .send(
+            '로그인 요청이 만료되었거나 유효하지 않습니다. 다시 로그인하세요.',
+          )
+      if (typeof req.query.code !== 'string' || !req.query.code)
+        return res.status(400).send('Slack 인증 코드가 없습니다.')
+      try {
+        const response = await fetch(
+          'https://slack.com/api/openid.connect.token',
+          {
+            method: 'POST',
+            signal: AbortSignal.timeout(10000),
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              code: req.query.code,
+              client_id: env.SLACK_CLIENT_ID,
+              client_secret: env.SLACK_CLIENT_SECRET,
+              redirect_uri: env.SLACK_REDIRECT_URI,
+            }),
+          },
+        )
+        const result = await response.json()
+        if (!response.ok || !result.ok)
+          return res
+            .status(502)
+            .send('Slack 인증에 실패했습니다. 다시 로그인하세요.')
+        const { payload } = await jwtVerify(result.id_token, slackKeys, {
+          issuer: 'https://slack.com',
+          audience: env.SLACK_CLIENT_ID,
+          algorithms: ['RS256'],
+          requiredClaims: ['exp', 'iat', 'sub', 'nonce'],
+        })
+        if (
+          payload.nonce !== state.userId ||
+          (env.ALLOWED_SLACK_TEAM_ID &&
+            payload['https://slack.com/team_id'] !== env.ALLOWED_SLACK_TEAM_ID)
+        )
+          return res.status(403).send('허용되지 않은 Slack 로그인입니다.')
+        const { rows } = await pool.query(
+          'SELECT id, name, role FROM users WHERE slack_user_id = $1 AND active = true',
+          [payload.sub],
+        )
+        if (!rows[0])
+          return res
+            .status(403)
+            .send(
+              '사전 등록된 활성 MSP 사용자가 아닙니다. 관리자에게 등록을 요청하세요.',
+            )
+        const token = createSessionToken(
+          { userId: rows[0].id, exp: Date.now() + SESSION_AGE * 1000 },
+          env.SESSION_SECRET,
+        )
+        res.append(
+          'Set-Cookie',
+          cookie(SESSION_COOKIE, token, SESSION_AGE, env),
+        )
+        res.redirect('/')
+      } catch (error) {
+        if (
+          error.code?.startsWith('ERR_JWT') ||
+          error.code?.startsWith('ERR_JWS') ||
+          error.code?.startsWith('ERR_JOSE')
+        )
+          return res
+            .status(403)
+            .send('Slack 인증 정보를 확인할 수 없습니다. 다시 로그인하세요.')
+        next(error)
+      }
     })
   }
-}
-
-// 본인(userId 일치) 또는 allowedRoles에 속한 사용자만 허용. userIdFrom(request)로 대상 userId를 얻는다.
-export function requireSelfOrRole(env, allowedRoles, userIdFrom) {
-  const requireAuth = requireSession(env)
-  return (request, response, next) => {
-    requireAuth(request, response, (error) => {
-      if (error) return next(error)
-      const targetUserId = userIdFrom(request)
-      if (request.session.userId === targetUserId || allowedRoles.includes(request.session.role)) return next()
-      return response.status(403).json({ error: '이 작업을 수행할 권한이 없습니다.' })
-    })
-  }
+  app.get('/auth/logout', (_req, res) => {
+    res.setHeader('Set-Cookie', cookie(SESSION_COOKIE, '', 0, env))
+    res.redirect('/')
+  })
+  app.get('/api/me', requireSession(env, pool), (req, res) =>
+    res.json(req.session),
+  )
 }

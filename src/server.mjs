@@ -1,289 +1,756 @@
 import express from 'express'
+import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { connectDatabase } from './db.mjs'
-import { registerAuthRoutes, requireRole, requireSelfOrRole, requireSession } from './auth.mjs'
+import { connectDatabase, transaction } from './db.mjs'
+import {
+  registerAuthRoutes,
+  requireRole,
+  requireSelfOrRole,
+  requireSession,
+} from './auth.mjs'
+import * as v from './validation.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
+const roles = ['engineer', 'lead', 'executive', 'admin']
+const scheduleTypes = [
+  '',
+  '출근',
+  '휴가',
+  '오전반차',
+  '오후반차',
+  '외근',
+  '오전출장',
+  '오후출장',
+  '종일출장',
+]
+const tiers = ['Standard', 'Advanced', 'Enterprise']
+const reviewFields = [
+  'workHighlights',
+  'actionItems',
+  'topsProjects',
+  'otherNotes',
+]
+const calendarDate = (value) =>
+  value instanceof Date
+    ? `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+    : value
+const has = (obj, key) => Object.hasOwn(obj, key)
+
+async function activeUser(db, id) {
+  const result = await db.query(
+    'SELECT id FROM users WHERE id = $1 AND active = true',
+    [id],
+  )
+  if (!result.rows.length) v.fail(400, '활성 구성원을 선택하세요.')
+}
+
+function userFields(body) {
+  const fields = {}
+  if (has(body, 'name')) fields.name = v.text(body.name, '이름', { max: 100 })
+  if (has(body, 'partId'))
+    fields.part_id =
+      body.partId === null ? null : v.text(body.partId, '파트', { max: 100 })
+  if (has(body, 'role')) fields.role = v.choice(body.role, roles, '역할')
+  if (has(body, 'active')) fields.active = v.bool(body.active)
+  if (has(body, 'slackUserId'))
+    fields.slack_user_id = v.text(body.slackUserId, 'Slack 사용자 ID', {
+      max: 100,
+    })
+  if (has(body, 'email')) {
+    fields.email = v.text(body.email, '이메일', { required: false, max: 254 })
+    if (fields.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.email))
+      v.fail(400, '이메일 형식을 확인하세요.')
+  }
+  if (has(body, 'workStart')) fields.work_start = v.time(body.workStart)
+  if (has(body, 'workEnd')) fields.work_end = v.time(body.workEnd)
+  return fields
+}
 
 export function createApp(pool, env = process.env) {
+  if (env.NODE_ENV === 'production') {
+    for (const key of [
+      'SLACK_CLIENT_ID',
+      'SLACK_CLIENT_SECRET',
+      'SLACK_REDIRECT_URI',
+      'SESSION_SECRET',
+      'ALLOWED_SLACK_TEAM_ID',
+    ])
+      if (!env[key]) throw new Error(`Slack 운영 설정이 필요합니다: ${key}`)
+    if (
+      !env.SLACK_REDIRECT_URI.startsWith('https://') ||
+      env.SESSION_SECRET.length < 32
+    )
+      throw new Error(
+        '운영 환경에는 HTTPS와 32자 이상 SESSION_SECRET이 필요합니다.',
+      )
+  }
   const app = express()
-  app.use(express.json())
-  app.get('/health', (_request, response) => response.json({ ok: true }))
-  const authEnabled = Boolean(env.SLACK_CLIENT_ID)
-  if (authEnabled) registerAuthRoutes(app, pool, env)
-  // 인증이 꺼져 있으면(SLACK_CLIENT_ID 미설정) 통과시키는 no-op 미들웨어. 로컬/테스트 편의용.
-  const noop = (_request, _response, next) => next()
-  const adminOnly = authEnabled ? requireRole(env, ['admin']) : noop
-  const adminOrLead = authEnabled ? requireRole(env, ['admin', 'lead']) : noop
-  const selfOrAdminOrLead = (userIdFrom) => authEnabled ? requireSelfOrRole(env, ['admin', 'lead'], userIdFrom) : noop
-  // 담당 고객사는 엔지니어들이 서로 자주 넘겨주고 받는 관계라, 본인 소유 여부와 무관하게
-  // 로그인한 사람(seed에 등록된 engineer/lead/executive/admin) 누구나 추가·수정할 수 있다.
-  const requireAnySession = authEnabled ? requireSession(env) : noop
-  app.get('/api/bootstrap', async (_request, response, next) => {
+  app.disable('x-powered-by')
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('Referrer-Policy', 'same-origin')
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+    )
+    if (req.path.startsWith('/api/') || req.path.startsWith('/auth/'))
+      res.setHeader('Cache-Control', 'no-store')
+    next()
+  })
+  app.use(express.json({ limit: '128kb' }))
+  app.get('/health', async (_req, res) => {
     try {
-      const result = await pool.query('SELECT u.id, u.name, p.name AS part, u.role FROM users u LEFT JOIN parts p ON p.id = u.part_id ORDER BY p.name NULLS FIRST, u.name')
-      response.json({ users: result.rows })
-    } catch (error) {
-      next(error)
+      await pool.query('SELECT 1')
+      res.json({ ok: true })
+    } catch {
+      res.status(503).json({ ok: false })
     }
   })
-  app.get('/api/reviews', async (request, response, next) => {
-    const weekEnd = request.query.weekEnd
-    if (typeof weekEnd !== 'string' || !weekEnd) return response.status(400).json({ error: 'weekEnd 쿼리 파라미터가 필요합니다.' })
-    try {
-      const result = await pool.query(
-        `SELECT u.id, u.name, p.name AS part, u.role,
-                r.work_highlights, r.action_items, r.tops_projects, r.other_notes, r.status,
-                r.tickets_new, r.tickets_in_progress, r.tickets_done
-         FROM users u
-         LEFT JOIN parts p ON p.id = u.part_id
-         LEFT JOIN reviews r ON r.user_id = u.id AND r.week_end = $1
-         ORDER BY p.name NULLS FIRST, u.name`,
-        [weekEnd],
-      )
-      response.json({
-        entries: result.rows.map((row) => ({
-          id: row.id,
-          name: row.name,
-          part: row.part,
-          role: row.role,
-          workHighlights: row.work_highlights ?? '',
-          actionItems: row.action_items ?? '',
-          topsProjects: row.tops_projects ?? '',
-          otherNotes: row.other_notes ?? '',
-          status: row.status ?? 'missing',
-          tickets: [row.tickets_new ?? 0, row.tickets_in_progress ?? 0, row.tickets_done ?? 0],
-        })),
-      })
-    } catch (error) {
-      next(error)
-    }
-  })
-  app.get('/api/customers', async (_request, response, next) => {
-    try {
-      // 담당 고객사가 아직 하나도 없는 팀원도 화면에 자기 칸이 보여야(그래야 "추가" 버튼을 누를 수 있다)
-      // 하므로, customer_assignments가 아니라 users를 기준으로 전체를 조회하고 LEFT JOIN한다.
-      const usersResult = await pool.query('SELECT u.id, u.name, p.name AS part FROM users u LEFT JOIN parts p ON p.id = u.part_id ORDER BY p.name NULLS FIRST, u.name')
-      const assignmentsResult = await pool.query(
-        `SELECT ca.user_id, c.id AS customer_id, c.name AS customer_name, c.since, c.tier, c.mcr, c.key_account, c.note
-         FROM customer_assignments ca
-         JOIN customers c ON c.id = ca.customer_id
-         ORDER BY c.name`,
-      )
-      const owners = usersResult.rows.map((user) => ({ userId: user.id, name: user.name, part: user.part, customers: [] }))
-      const ownerIndex = new Map(owners.map((owner, index) => [owner.userId, index]))
-      for (const row of assignmentsResult.rows) {
-        const index = ownerIndex.get(row.user_id)
-        if (index === undefined) continue
-        owners[index].customers.push({ id: row.customer_id, name: row.customer_name, since: row.since, tier: row.tier, mcr: row.mcr, keyAccount: row.key_account, note: row.note ?? '' })
+  registerAuthRoutes(app, pool, env)
+  app.use('/api', requireSession(env, pool))
+  const limits = new Map()
+  app.use('/api', (req, res, next) => {
+    const now = Date.now()
+    for (const [key, value] of limits) if (value.until < now) limits.delete(key)
+    const key = req.session.userId
+    const limit = limits.get(key) ?? { count: 0, until: now + 60000 }
+    limits.set(key, limit)
+    if (++limit.count > 600)
+      return res
+        .status(429)
+        .json({ error: '요청이 너무 많습니다. 잠시 후 다시 시도하세요.' })
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      if (req.headers['sec-fetch-site'] === 'cross-site')
+        return res
+          .status(403)
+          .json({ error: '다른 사이트의 요청은 허용되지 않습니다.' })
+      if (req.headers.origin) {
+        const expected = env.APP_PUBLIC_URL
+          ? new URL(env.APP_PUBLIC_URL).origin
+          : env.SLACK_REDIRECT_URI
+            ? new URL(env.SLACK_REDIRECT_URI).origin
+            : `http://${req.headers.host}`
+        if (req.headers.origin !== expected)
+          return res
+            .status(403)
+            .json({ error: '요청 출처가 올바르지 않습니다.' })
       }
-      response.json({ owners })
-    } catch (error) {
-      next(error)
-    }
-  })
-  const customerTiers = ['Standard', 'Advanced', 'Enterprise']
-  app.post('/api/customers', requireAnySession, async (request, response, next) => {
-    const { name, userId, tier, mcr, keyAccount, since, note } = request.body
-    if (typeof name !== 'string' || !name.trim() || typeof userId !== 'string' || !userId.trim()) return response.status(400).json({ error: 'name과 userId는 필수입니다.' })
-    if (tier !== undefined && !customerTiers.includes(tier)) return response.status(400).json({ error: `tier는 ${customerTiers.join('/')} 중 하나여야 합니다.` })
-    try {
-      const created = await pool.query(
-        'INSERT INTO customers (name, since, tier, mcr, key_account, note) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-        [name.trim(), since ?? null, tier ?? 'Standard', Boolean(mcr), Boolean(keyAccount), note ?? ''],
+      if (
+        req.body !== undefined &&
+        (!req.body || typeof req.body !== 'object' || Array.isArray(req.body))
       )
-      const id = created.rows[0].id
-      await pool.query('INSERT INTO customer_assignments (customer_id, user_id) VALUES ($1, $2)', [id, userId])
-      response.status(201).json({ id })
-    } catch (error) {
-      next(error)
+        return res.status(400).json({ error: 'JSON 객체가 필요합니다.' })
     }
+    req.body ??= {}
+    next()
   })
-  // 담당 고객사 수정/삭제도 추가와 동일하게 로그인한 사람 누구나 가능하다(엔지니어끼리 담당을 자주 넘김).
-  app.put('/api/customers/:id', requireAnySession, async (request, response, next) => {
-    const { userId, tier, mcr, keyAccount, note, since } = request.body
-    if (typeof userId !== 'string' || !userId.trim()) return response.status(400).json({ error: 'userId는 필수입니다.' })
-    if (tier !== undefined && !customerTiers.includes(tier)) return response.status(400).json({ error: `tier는 ${customerTiers.join('/')} 중 하나여야 합니다.` })
-    try {
-      await pool.query(
-        'UPDATE customers SET tier = COALESCE($1, tier), mcr = COALESCE($2, mcr), key_account = COALESCE($3, key_account), note = COALESCE($4, note), since = COALESCE($5, since) WHERE id = $6',
-        [tier ?? null, mcr ?? null, keyAccount ?? null, note ?? null, since ?? null, request.params.id],
-      )
-      await pool.query('DELETE FROM customer_assignments WHERE customer_id = $1', [request.params.id])
-      await pool.query('INSERT INTO customer_assignments (customer_id, user_id) VALUES ($1, $2)', [request.params.id, userId])
-      response.status(204).end()
-    } catch (error) {
-      next(error)
-    }
+  const adminOnly = requireRole(env, ['admin'])
+  const leadOnly = requireRole(env, ['admin', 'lead'])
+  const selfOnly = requireSelfOrRole(
+    env,
+    [],
+    (req) => req.body.userId ?? req.session.userId,
+  )
+  const selfOrLead = requireSelfOrRole(
+    env,
+    ['admin', 'lead'],
+    (req) => req.body.userId,
+  )
+
+  app.get('/api/bootstrap', async (_req, res) => {
+    const { rows } = await pool.query(
+      'SELECT u.id, u.name, p.name AS part, u.role, u.work_start, u.work_end FROM users u LEFT JOIN parts p ON p.id = u.part_id WHERE u.active = true ORDER BY p.name NULLS FIRST, u.name',
+    )
+    res.json({
+      users: rows.map(({ work_start, work_end, ...row }) => ({
+        ...row,
+        workStart: String(work_start).slice(0, 5),
+        workEnd: String(work_end).slice(0, 5),
+      })),
+    })
   })
-  app.delete('/api/customers/:id', requireAnySession, async (request, response, next) => {
-    try {
-      await pool.query('DELETE FROM customers WHERE id = $1', [request.params.id])
-      response.status(204).end()
-    } catch (error) {
-      next(error)
-    }
-  })
-  app.get('/api/schedule', async (request, response, next) => {
-    const month = request.query.month
-    if (typeof month !== 'string' || !/^\d{4}-\d{2}$/.test(month)) return response.status(400).json({ error: 'month는 YYYY-MM 형식이어야 합니다.' })
-    try {
-      const result = await pool.query('SELECT user_id, work_date, type, note FROM schedule_entries WHERE to_char(work_date, \'YYYY-MM\') = $1', [month])
-      const entries = {}
-      for (const row of result.rows) {
-        const dateKey = row.work_date instanceof Date ? row.work_date.toISOString().slice(0, 10) : row.work_date
-        entries[row.user_id] ??= {}
-        entries[row.user_id][dateKey] = { type: row.type, note: row.note ?? '' }
-      }
-      response.json({ entries })
-    } catch (error) {
-      next(error)
-    }
-  })
-  app.put('/api/schedule', selfOrAdminOrLead((request) => request.body?.userId), async (request, response, next) => {
-    const { userId, date, type, note } = request.body
-    if (typeof userId !== 'string' || !userId.trim() || typeof date !== 'string' || !date.trim()) return response.status(400).json({ error: 'userId와 date는 필수입니다.' })
-    try {
-      await pool.query('INSERT INTO schedule_entries (user_id, work_date, type, note) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, work_date) DO UPDATE SET type = EXCLUDED.type, note = EXCLUDED.note', [userId, date, type ?? '', note ?? ''])
-      response.status(204).end()
-    } catch (error) {
-      next(error)
-    }
-  })
-  app.get('/api/holidays', async (_request, response, next) => {
-    try {
-      const result = await pool.query('SELECT holiday_date, name FROM holidays ORDER BY holiday_date')
-      response.json({ holidays: result.rows.map((row) => ({ date: row.holiday_date instanceof Date ? row.holiday_date.toISOString().slice(0, 10) : row.holiday_date, name: row.name })) })
-    } catch (error) {
-      next(error)
-    }
-  })
-  app.post('/api/holidays', adminOrLead, async (request, response, next) => {
-    const { date, name } = request.body
-    if (typeof date !== 'string' || !date.trim() || typeof name !== 'string' || !name.trim()) return response.status(400).json({ error: 'date와 name은 필수입니다.' })
-    try {
-      await pool.query('INSERT INTO holidays (holiday_date, name) VALUES ($1, $2) ON CONFLICT (holiday_date) DO UPDATE SET name = EXCLUDED.name', [date, name.trim()])
-      response.status(201).end()
-    } catch (error) {
-      next(error)
-    }
-  })
-  app.delete('/api/holidays/:date', adminOrLead, async (request, response, next) => {
-    try {
-      await pool.query('DELETE FROM holidays WHERE holiday_date = $1', [request.params.date])
-      response.status(204).end()
-    } catch (error) {
-      next(error)
-    }
-  })
-  app.get('/api/overtime', async (request, response, next) => {
-    const userId = request.query.userId
-    if (typeof userId !== 'string' || !userId.trim()) return response.status(400).json({ error: 'userId 쿼리 파라미터가 필요합니다.' })
-    try {
-      const result = await pool.query(
-        'SELECT id, work_date, type, customer, start_time, end_time, hours, detail, evidence, status FROM overtime_records WHERE user_id = $1 ORDER BY work_date DESC',
-        [userId],
-      )
-      const records = result.rows.map((row) => ({
+
+  app.get('/api/reviews', async (req, res) => {
+    const week = v.date(req.query.weekEnd)
+    const { rows } = await pool.query(
+      `SELECT u.id,u.name,p.name AS part,u.role,r.id AS review_id,r.work_highlights,r.action_items,r.tops_projects,r.other_notes,r.status,r.tickets_new,r.tickets_in_progress,r.tickets_done,r.version,r.updated_at,r.reviewed_by FROM users u LEFT JOIN parts p ON p.id=u.part_id LEFT JOIN reviews r ON r.user_id=u.id AND r.week_end=$1 WHERE u.active=true OR r.id IS NOT NULL ORDER BY p.name NULLS FIRST,u.name`,
+      [week],
+    )
+    res.json({
+      entries: rows.map((row) => ({
         id: row.id,
-        date: row.work_date instanceof Date ? row.work_date.toISOString().slice(0, 10) : row.work_date,
+        name: row.name,
+        part: row.part,
+        role: row.role,
+        reviewId: row.review_id ?? null,
+        workHighlights: row.work_highlights ?? '',
+        actionItems: row.action_items ?? '',
+        topsProjects: row.tops_projects ?? '',
+        otherNotes: row.other_notes ?? '',
+        status: row.status ?? 'missing',
+        tickets: [
+          row.tickets_new ?? 0,
+          row.tickets_in_progress ?? 0,
+          row.tickets_done ?? 0,
+        ],
+        version: row.version ?? 0,
+        updatedAt: row.updated_at ?? null,
+        reviewedBy: row.reviewed_by ?? null,
+      })),
+    })
+  })
+  app.put('/api/reviews', selfOnly, async (req, res) => {
+    const b = req.body
+    const week = v.date(b.weekEnd)
+    const version = v.integer(b.version, 'version')
+    const status = v.choice(b.status, ['draft', 'submitted'], '회고 상태')
+    const values = reviewFields.map((field) =>
+      v.text(b[field] ?? '', field, { required: status === 'submitted' }),
+    )
+    const tickets = ['ticketsNew', 'ticketsInProgress', 'ticketsDone'].map(
+      (field) => v.integer(b[field] === '' ? 0 : (b[field] ?? 0), '티켓 수'),
+    )
+    const result = await transaction(pool, async (db) => {
+      await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [
+        req.session.userId,
+      ])
+      const old = await db.query(
+        'SELECT id,version FROM reviews WHERE user_id=$1 AND week_end=$2 FOR UPDATE',
+        [req.session.userId, week],
+      )
+      if ((old.rows[0]?.version ?? 0) !== version)
+        v.fail(
+          409,
+          '회고가 다른 창에서 변경되었습니다. 작성 내용을 복사한 후 새로 불러오세요.',
+        )
+      return db.query(
+        `INSERT INTO reviews(user_id,week_end,work_highlights,action_items,tops_projects,other_notes,tickets_new,tickets_in_progress,tickets_done,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(user_id,week_end) DO UPDATE SET work_highlights=EXCLUDED.work_highlights,action_items=EXCLUDED.action_items,tops_projects=EXCLUDED.tops_projects,other_notes=EXCLUDED.other_notes,tickets_new=EXCLUDED.tickets_new,tickets_in_progress=EXCLUDED.tickets_in_progress,tickets_done=EXCLUDED.tickets_done,status=EXCLUDED.status,version=reviews.version+1,updated_at=now(),reviewed_by=NULL RETURNING id,version,status`,
+        [req.session.userId, week, ...values, ...tickets, status],
+      )
+    })
+    res.json(result.rows[0])
+  })
+  app.post('/api/reviews/:id/complete', leadOnly, async (req, res) => {
+    const version = v.integer(req.body.version, 'version')
+    const result = await pool.query(
+      "UPDATE reviews SET status='reviewed',reviewed_by=$1,version=version+1,updated_at=now() WHERE id=$2 AND version=$3 AND status='submitted' RETURNING version,status",
+      [req.session.userId, req.params.id, version],
+    )
+    if (!result.rowCount)
+      v.fail(
+        409,
+        '제출된 최신 회고만 검토 완료할 수 있습니다. 새로 불러오세요.',
+      )
+    res.json(result.rows[0])
+  })
+  app.get('/api/reviews/:id/comments', async (req, res) => {
+    const { rows } = await pool.query(
+      'SELECT c.id,c.author_id,c.body,c.created_at,u.name FROM review_comments c JOIN users u ON u.id=c.author_id WHERE review_id=$1 ORDER BY c.created_at,c.id',
+      [req.params.id],
+    )
+    res.json({
+      comments: rows.map((row) => ({
+        id: row.id,
+        authorId: row.author_id,
+        authorName: row.name,
+        body: row.body,
+        createdAt: row.created_at,
+      })),
+    })
+  })
+  app.post('/api/reviews/:id/comments', async (req, res) => {
+    const body = v.text(req.body.body, '댓글', { max: 5000 })
+    const result = await pool.query(
+      'INSERT INTO review_comments(review_id,author_id,body) VALUES($1,$2,$3) RETURNING id,created_at',
+      [req.params.id, req.session.userId, body],
+    )
+    res.status(201).json({
+      id: result.rows[0].id,
+      authorId: req.session.userId,
+      authorName: req.session.name,
+      body,
+      createdAt: result.rows[0].created_at,
+    })
+  })
+
+  app.get('/api/customers', async (_req, res) => {
+    const users = await pool.query(
+      'SELECT u.id,u.name,p.name AS part FROM users u LEFT JOIN parts p ON p.id=u.part_id WHERE u.active=true OR EXISTS(SELECT 1 FROM customer_assignments ca WHERE ca.user_id=u.id) ORDER BY p.name NULLS FIRST,u.name',
+    )
+    const assignments = await pool.query(
+      'SELECT ca.user_id,c.* FROM customer_assignments ca JOIN customers c ON c.id=ca.customer_id ORDER BY c.name',
+    )
+    res.json({
+      owners: users.rows.map((u) => ({
+        userId: u.id,
+        name: u.name,
+        part: u.part,
+        customers: assignments.rows
+          .filter((c) => c.user_id === u.id)
+          .map((c) => ({
+            id: c.id,
+            name: c.name,
+            since: calendarDate(c.since),
+            tier: c.tier,
+            mcr: c.mcr,
+            keyAccount: c.key_account,
+            note: c.note,
+          })),
+      })),
+    })
+  })
+  function customerFields(b) {
+    const fields = {}
+    if (has(b, 'name'))
+      fields.name = v.text(b.name, '고객사 이름', { max: 200 })
+    if (has(b, 'since'))
+      fields.since = b.since === null || b.since === '' ? null : v.date(b.since)
+    if (has(b, 'tier')) fields.tier = v.choice(b.tier, tiers, '등급')
+    if (has(b, 'mcr')) fields.mcr = v.bool(b.mcr)
+    if (has(b, 'keyAccount')) fields.key_account = v.bool(b.keyAccount)
+    if (has(b, 'note'))
+      fields.note = v.text(b.note, '메모', { required: false })
+    return fields
+  }
+  app.post('/api/customers', async (req, res) => {
+    const b = req.body,
+      fields = customerFields(b)
+    v.text(b.userId, '담당자')
+    v.text(b.name, '고객사 이름', { max: 200 })
+    const id = await transaction(pool, async (db) => {
+      await activeUser(db, b.userId)
+      const cols = Object.keys(fields)
+      const result = await db.query(
+        `INSERT INTO customers(${cols.join(',')}) VALUES(${cols.map((_, i) => `$${i + 1}`).join(',')}) RETURNING id`,
+        Object.values(fields),
+      )
+      await db.query(
+        'INSERT INTO customer_assignments(customer_id,user_id) VALUES($1,$2)',
+        [result.rows[0].id, b.userId],
+      )
+      return result.rows[0].id
+    })
+    res.status(201).json({ id })
+  })
+  app.put('/api/customers/:id', async (req, res) => {
+    const b = req.body,
+      fields = customerFields(b)
+    v.text(b.userId, '담당자')
+    await transaction(pool, async (db) => {
+      const existing = await db.query(
+        'SELECT id FROM customers WHERE id=$1 FOR UPDATE',
+        [req.params.id],
+      )
+      if (!existing.rowCount) v.fail(404, '고객사를 찾을 수 없습니다.')
+      await activeUser(db, b.userId)
+      const cols = Object.keys(fields)
+      if (cols.length)
+        await db.query(
+          `UPDATE customers SET ${cols.map((key, i) => `${key}=$${i + 1}`).join(',')} WHERE id=$${cols.length + 1}`,
+          [...Object.values(fields), req.params.id],
+        )
+      await db.query('DELETE FROM customer_assignments WHERE customer_id=$1', [
+        req.params.id,
+      ])
+      await db.query(
+        'INSERT INTO customer_assignments(customer_id,user_id) VALUES($1,$2)',
+        [req.params.id, b.userId],
+      )
+    })
+    res.status(204).end()
+  })
+  app.delete('/api/customers/:id', async (req, res) => {
+    const result = await pool.query('DELETE FROM customers WHERE id=$1', [
+      req.params.id,
+    ])
+    if (!result.rowCount) v.fail(404, '고객사를 찾을 수 없습니다.')
+    res.status(204).end()
+  })
+
+  app.get('/api/schedule', async (req, res) => {
+    const month = v.month(req.query.month)
+    const { rows } = await pool.query(
+      "SELECT user_id,work_date,type,note FROM schedule_entries WHERE work_date >= ($1 || '-01')::date AND work_date < ($1 || '-01')::date + interval '1 month'",
+      [month],
+    )
+    const entries = {}
+    for (const row of rows) {
+      entries[row.user_id] ??= {}
+      entries[row.user_id][calendarDate(row.work_date)] = {
         type: row.type,
-        customer: row.customer,
-        startTime: String(row.start_time).slice(0, 5),
-        endTime: String(row.end_time).slice(0, 5),
-        hours: Number(row.hours),
-        detail: row.detail,
-        evidence: row.evidence ?? '',
-        status: row.status,
-      }))
-      const balanceHours = records.filter((record) => record.status === 'approved').reduce((total, record) => total + record.hours, 0)
-      response.json({ balanceHours, records })
-    } catch (error) {
-      next(error)
+        note: row.note,
+      }
     }
+    res.json({ entries })
   })
-  app.post('/api/overtime', async (request, response, next) => {
-    const { userId, date, type, customer, startTime, endTime, hours, detail, evidence } = request.body
-    if (![userId, date, type, customer, startTime, endTime, detail].every((value) => typeof value === 'string' && value.trim()) || !(Number(hours) > 0)) {
-      return response.status(400).json({ error: '시간외 업무 등록에 필요한 항목이 비어 있습니다.' })
-    }
-    try {
+  app.put('/api/schedule', selfOrLead, async (req, res) => {
+    const b = req.body
+    v.text(b.userId, '사용자')
+    v.date(b.date)
+    v.choice(b.type, scheduleTypes, '일정 유형')
+    v.text(b.note ?? '', '사유', { required: false })
+    await activeUser(pool, b.userId)
+    if (!b.type && !b.note)
       await pool.query(
-        'INSERT INTO overtime_records (user_id, work_date, type, customer, start_time, end_time, hours, detail, evidence) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-        [userId, date, type, customer, startTime, endTime, hours, detail, evidence ?? ''],
+        'DELETE FROM schedule_entries WHERE user_id=$1 AND work_date=$2',
+        [b.userId, b.date],
       )
-      response.status(201).end()
-    } catch (error) {
-      next(error)
-    }
-  })
-  app.post('/api/overtime/:id/approve', adminOrLead, async (request, response, next) => {
-    try {
-      await pool.query("UPDATE overtime_records SET status = 'approved' WHERE id = $1 AND status = 'pending'", [request.params.id])
-      response.status(204).end()
-    } catch (error) {
-      next(error)
-    }
-  })
-  app.get('/api/organization', async (_request, response, next) => {
-    try {
-      const partsResult = await pool.query('SELECT id, name, color FROM parts ORDER BY name')
-      const usersResult = await pool.query('SELECT id, name, part_id, role, version FROM users ORDER BY name')
-      const users = {}
-      for (const row of usersResult.rows) users[row.id] = { name: row.name, partId: row.part_id, role: row.role, version: row.version }
-      response.json({ parts: partsResult.rows, users })
-    } catch (error) {
-      next(error)
-    }
-  })
-  app.post('/api/organization/parts', adminOnly, async (request, response, next) => {
-    const { name } = request.body
-    if (typeof name !== 'string' || !name.trim()) return response.status(400).json({ error: 'name은 필수입니다.' })
-    try {
-      const id = `part-${name.trim().toLowerCase().replace(/\s+/g, '-')}`
-      const created = await pool.query('INSERT INTO parts (id, name) VALUES ($1, $2) RETURNING id', [id, name.trim()])
-      response.status(201).json({ id: created.rows[0].id })
-    } catch (error) {
-      next(error)
-    }
-  })
-  app.put('/api/organization/users/:id', adminOnly, async (request, response, next) => {
-    const { partId, role, version } = request.body
-    if (!(Number(version) >= 0)) return response.status(400).json({ error: 'version은 필수입니다.' })
-    try {
-      const result = await pool.query(
-        'UPDATE users SET part_id = COALESCE($1, part_id), role = COALESCE($2, role), version = version + 1 WHERE id = $3 AND version = $4',
-        [partId ?? null, role ?? null, request.params.id, version],
-      )
-      if (result.rowCount === 0) return response.status(409).json({ error: '다른 사용자가 먼저 변경했습니다. 최신 상태를 다시 불러오세요.' })
-      response.status(204).end()
-    } catch (error) {
-      next(error)
-    }
-  })
-  app.put('/api/reviews', async (request, response, next) => {
-    const { userId, weekEnd, workHighlights, actionItems, topsProjects, otherNotes, ticketsNew, ticketsInProgress, ticketsDone } = request.body
-    if (![userId, weekEnd, workHighlights, actionItems, topsProjects, otherNotes].every((value) => typeof value === 'string' && value.trim())) return response.status(400).json({ error: '네 개의 회고 항목은 모두 필수입니다.' })
-    const tickets = [ticketsNew, ticketsInProgress, ticketsDone].map((value) => Number(value) || 0)
-    if (tickets.some((value) => value < 0)) return response.status(400).json({ error: '티켓 수는 0 이상이어야 합니다.' })
-    try {
+    else
       await pool.query(
-        'INSERT INTO reviews (user_id, week_end, work_highlights, action_items, tops_projects, other_notes, tickets_new, tickets_in_progress, tickets_done) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (user_id, week_end) DO UPDATE SET work_highlights = EXCLUDED.work_highlights, action_items = EXCLUDED.action_items, tops_projects = EXCLUDED.tops_projects, other_notes = EXCLUDED.other_notes, tickets_new = EXCLUDED.tickets_new, tickets_in_progress = EXCLUDED.tickets_in_progress, tickets_done = EXCLUDED.tickets_done',
-        [userId, weekEnd, workHighlights, actionItems, topsProjects, otherNotes, ...tickets],
+        'INSERT INTO schedule_entries(user_id,work_date,type,note) VALUES($1,$2,$3,$4) ON CONFLICT(user_id,work_date) DO UPDATE SET type=EXCLUDED.type,note=EXCLUDED.note',
+        [b.userId, b.date, b.type, b.note ?? ''],
       )
-      response.status(204).end()
-    } catch (error) {
-      next(error)
-    }
+    res.status(204).end()
   })
+  app.get('/api/holidays', async (_req, res) => {
+    const { rows } = await pool.query(
+      'SELECT holiday_date,name FROM holidays ORDER BY holiday_date',
+    )
+    res.json({
+      holidays: rows.map((row) => ({
+        date: calendarDate(row.holiday_date),
+        name: row.name,
+      })),
+    })
+  })
+  app.post('/api/holidays', leadOnly, async (req, res) => {
+    await pool.query(
+      'INSERT INTO holidays(holiday_date,name) VALUES($1,$2) ON CONFLICT(holiday_date) DO UPDATE SET name=EXCLUDED.name',
+      [v.date(req.body.date), v.text(req.body.name, '휴일 이름', { max: 100 })],
+    )
+    res.status(201).end()
+  })
+  app.delete('/api/holidays/:date', leadOnly, async (req, res) => {
+    await pool.query('DELETE FROM holidays WHERE holiday_date=$1', [
+      v.date(req.params.date),
+    ])
+    res.status(204).end()
+  })
+
+  app.get('/api/organization', async (req, res) => {
+    const parts = await pool.query(
+      'SELECT id,name,color FROM parts ORDER BY name',
+    )
+    const people = await pool.query(
+      'SELECT id,name,part_id,role,version,email,work_start,work_end,slack_user_id,active FROM users ORDER BY name',
+    )
+    res.json({
+      parts: parts.rows,
+      users: Object.fromEntries(
+        people.rows.map((u) => [
+          u.id,
+          {
+            name: u.name,
+            partId: u.part_id,
+            role: u.role,
+            version: u.version,
+            email: u.email,
+            workStart: String(u.work_start).slice(0, 5),
+            workEnd: String(u.work_end).slice(0, 5),
+            active: u.active,
+            ...(req.session.role === 'admin'
+              ? { slackUserId: u.slack_user_id }
+              : {}),
+          },
+        ]),
+      ),
+    })
+  })
+  app.post('/api/organization/parts', adminOnly, async (req, res) => {
+    const id = crypto.randomUUID()
+    await pool.query('INSERT INTO parts(id,name) VALUES($1,$2)', [
+      id,
+      v.text(req.body.name, '파트 이름', { max: 100 }),
+    ])
+    res.status(201).json({ id })
+  })
+  app.put('/api/organization/parts/:id', adminOnly, async (req, res) => {
+    const name = v.text(req.body.name, '파트 이름', { max: 100 })
+    const result = await pool.query('UPDATE parts SET name=$1 WHERE id=$2', [
+      name,
+      req.params.id,
+    ])
+    if (!result.rowCount) v.fail(404, '파트가 없습니다.')
+    res.status(204).end()
+  })
+  app.delete('/api/organization/parts/:id', adminOnly, async (req, res) => {
+    await pool.query('DELETE FROM parts WHERE id=$1', [req.params.id])
+    res.status(204).end()
+  })
+  app.post('/api/organization/users', adminOnly, async (req, res) => {
+    v.text(req.body.name, '이름')
+    v.text(req.body.slackUserId, 'Slack 사용자 ID')
+    const fields = userFields(req.body),
+      cols = Object.keys(fields),
+      id = crypto.randomUUID()
+    await pool.query(
+      `INSERT INTO users(id,${cols.join(',')}) VALUES($1,${cols.map((_, i) => `$${i + 2}`).join(',')})`,
+      [id, ...Object.values(fields)],
+    )
+    res.status(201).json({ id })
+  })
+  app.put('/api/organization/users/:id', adminOnly, async (req, res) => {
+    const fields = userFields(req.body),
+      version = v.integer(req.body.version, 'version'),
+      cols = Object.keys(fields)
+    if (!cols.length) v.fail(400, '변경할 항목이 없습니다.')
+    await transaction(pool, async (db) => {
+      // Serialize admin demotions to prevent concurrently removing the final administrator.
+      await db.query(
+        "SELECT id FROM users WHERE role='admin' AND active=true ORDER BY id FOR UPDATE",
+      )
+      const current = await db.query(
+        'SELECT role,active FROM users WHERE id=$1',
+        [req.params.id],
+      )
+      if (!current.rows.length) v.fail(404, '사용자가 없습니다.')
+      if (
+        current.rows[0].role === 'admin' &&
+        current.rows[0].active &&
+        (fields.active === false || (fields.role && fields.role !== 'admin'))
+      ) {
+        const count = await db.query(
+          "SELECT count(*)::int AS count FROM users WHERE role='admin' AND active=true",
+        )
+        if (count.rows[0].count <= 1)
+          v.fail(
+            409,
+            '마지막 관리자는 비활성화하거나 권한을 해제할 수 없습니다.',
+          )
+      }
+      const result = await db.query(
+        `UPDATE users SET ${cols.map((key, i) => `${key}=$${i + 1}`).join(',')},version=version+1 WHERE id=$${cols.length + 1} AND version=$${cols.length + 2}`,
+        [...Object.values(fields), req.params.id, version],
+      )
+      if (!result.rowCount)
+        v.fail(409, '다른 사용자가 먼저 변경했습니다. 새로 불러오세요.')
+    })
+    res.status(204).end()
+  })
+
+  registerLeaveRoutes(app, pool, leadOnly, selfOnly)
+  app.use('/api', (_req, res) =>
+    res.status(404).json({ error: '요청한 API가 없습니다.' }),
+  )
   app.use(express.static(join(here, '..', 'public')))
+  app.use((error, _req, res, _next) => {
+    const messages = {
+      23505: '이미 등록된 이름 또는 계정입니다.',
+      23503: '연결된 데이터가 있거나 참조하는 항목이 없습니다.',
+      '22P02': '입력 형식이 올바르지 않습니다.',
+      22007: '날짜·시간 형식이 올바르지 않습니다.',
+      22008: '유효하지 않은 날짜·시간입니다.',
+      23514: '입력 범위를 확인하세요.',
+    }
+    const status =
+      error.status ??
+      (messages[error.code]
+        ? ['23505', '23503'].includes(error.code)
+          ? 409
+          : 400
+        : 500)
+    if (status >= 500)
+      console.error('Request failed:', error.code ?? error.name)
+    res.status(status).json({
+      error:
+        messages[error.code] ??
+        (status < 500
+          ? error.message
+          : '요청을 처리하지 못했습니다. 잠시 후 다시 시도하세요.'),
+    })
+  })
   return app
+}
+
+function registerLeaveRoutes(app, pool, leadOnly, selfOnly) {
+  const summarySql = `SELECT u.id AS user_id,COALESCE(o.accrued,0) AS accrued,COALESCE(o.pending,0) AS pending,COALESCE(l.used,0) AS used,COALESCE(l.pending,0) AS leave_pending FROM users u LEFT JOIN (SELECT user_id,SUM(hours) FILTER(WHERE status='approved') AS accrued,SUM(hours) FILTER(WHERE status='pending') AS pending FROM overtime_records GROUP BY user_id) o ON o.user_id=u.id LEFT JOIN (SELECT user_id,SUM(hours) FILTER(WHERE status='approved') AS used,SUM(hours) FILTER(WHERE status='pending') AS pending FROM leave_requests GROUP BY user_id) l ON l.user_id=u.id`
+  const totals = (row) => ({
+    userId: row.user_id,
+    accruedHours: Number(row.accrued),
+    usedHours: Number(row.used),
+    balanceHours:
+      Math.round((Number(row.accrued) - Number(row.used)) * 10000) / 10000,
+    pendingHours: Number(row.pending),
+    pendingLeaveHours: Number(row.leave_pending),
+  })
+  app.get('/api/overtime/summary', async (_req, res) => {
+    const { rows } = await pool.query(
+      summarySql + ' WHERE u.active=true ORDER BY u.name',
+    )
+    res.json({ users: rows.map(totals) })
+  })
+  app.get('/api/overtime', async (req, res) => {
+    const id = v.text(req.query.userId, '사용자')
+    const summary = await pool.query(summarySql + ' WHERE u.id=$1', [id])
+    if (!summary.rows.length) v.fail(404, '사용자가 없습니다.')
+    const overtime = await pool.query(
+      'SELECT * FROM overtime_records WHERE user_id=$1 ORDER BY work_date DESC,id DESC',
+      [id],
+    )
+    const leave = await pool.query(
+      'SELECT * FROM leave_requests WHERE user_id=$1 ORDER BY leave_date DESC,id DESC',
+      [id],
+    )
+    res.json({
+      ...totals(summary.rows[0]),
+      records: overtime.rows.map((r) => ({
+        id: r.id,
+        date: calendarDate(r.work_date),
+        type: r.type,
+        customer: r.customer,
+        startTime: String(r.start_time).slice(0, 5),
+        endTime: String(r.end_time).slice(0, 5),
+        hours: Number(r.hours),
+        detail: r.detail,
+        evidence: r.evidence,
+        status: r.status,
+      })),
+      leaves: leave.rows.map((r) => ({
+        id: r.id,
+        date: calendarDate(r.leave_date),
+        hours: Number(r.hours),
+        reason: r.reason,
+        status: r.status,
+      })),
+    })
+  })
+  app.post('/api/overtime', selfOnly, async (req, res) => {
+    const b = req.body
+    const hours = v.duration(b.startTime, b.endTime)
+    v.date(b.date)
+    v.choice(b.type, ['기술지원', '작업', '장애대응', '점검'], '업무 유형')
+    const customer = v.text(b.customer, '고객사', { max: 200 }),
+      detail = v.text(b.detail, '업무 내용'),
+      evidence = v.text(b.evidence ?? '', '근거', {
+        required: false,
+        max: 2000,
+      })
+    // Lock the person so accidental repeated submissions cannot create duplicate intervals.
+    await transaction(pool, async (db) => {
+      await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [
+        req.session.userId,
+      ])
+      const duplicate = await db.query(
+        `SELECT id FROM overtime_records WHERE user_id=$1 AND status<>'rejected'
+         AND tsrange(work_date + start_time,
+           work_date + end_time + CASE WHEN end_time < start_time THEN interval '1 day' ELSE interval '0 day' END, '[)')
+         && tsrange($2::date + $3::time,
+           $2::date + $4::time + CASE WHEN $4::time < $3::time THEN interval '1 day' ELSE interval '0 day' END, '[)')`,
+        [req.session.userId, b.date, b.startTime, b.endTime],
+      )
+      if (duplicate.rowCount)
+        v.fail(409, '해당 시간과 겹치는 초과근무가 이미 등록되어 있습니다.')
+      await db.query(
+        'INSERT INTO overtime_records(user_id,work_date,type,customer,start_time,end_time,hours,detail,evidence) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+        [
+          req.session.userId,
+          b.date,
+          b.type,
+          customer,
+          b.startTime,
+          b.endTime,
+          hours,
+          detail,
+          evidence,
+        ],
+      )
+    })
+    res.status(201).end()
+  })
+  app.post('/api/leave', selfOnly, async (req, res) => {
+    const b = req.body
+    const hours = Number(b.hours)
+    if (
+      !Number.isFinite(hours) ||
+      hours <= 0 ||
+      hours > 24 ||
+      Math.abs(hours * 100 - Math.round(hours * 100)) > 0.000001
+    )
+      v.fail(
+        400,
+        '사용 시간은 0보다 크고 24시간 이하로 소수 둘째 자리까지 입력하세요.',
+      )
+    await transaction(pool, async (db) => {
+      await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [
+        req.session.userId,
+      ])
+      const duplicate = await db.query(
+        "SELECT id FROM leave_requests WHERE user_id=$1 AND leave_date=$2 AND status<>'rejected'",
+        [req.session.userId, v.date(b.date)],
+      )
+      if (duplicate.rowCount)
+        v.fail(409, '해당 날짜의 사용 신청이 이미 있습니다.')
+      await db.query(
+        'INSERT INTO leave_requests(user_id,leave_date,hours,reason) VALUES($1,$2,$3,$4)',
+        [req.session.userId, b.date, hours, v.text(b.reason, '사용 사유')],
+      )
+    })
+    res.status(201).end()
+  })
+  for (const [path, table] of [
+    ['overtime', 'overtime_records'],
+    ['leave', 'leave_requests'],
+  ]) {
+    for (const action of ['approve', 'reject'])
+      app.post(`/api/${path}/:id/${action}`, leadOnly, async (req, res) => {
+        await transaction(pool, async (db) => {
+          const initial = await db.query(
+            `SELECT user_id FROM ${table} WHERE id=$1`,
+            [req.params.id],
+          )
+          if (!initial.rows.length) v.fail(404, '기록이 없습니다.')
+          await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [
+            initial.rows[0].user_id,
+          ])
+          const result = await db.query(
+            `SELECT * FROM ${table} WHERE id=$1 FOR UPDATE`,
+            [req.params.id],
+          )
+          const record = result.rows[0]
+          if (!record || record.status !== 'pending')
+            v.fail(409, '이미 처리된 기록입니다. 새로 불러오세요.')
+          if (path === 'leave' && action === 'approve') {
+            const { rows } = await db.query(summarySql + ' WHERE u.id=$1', [
+              record.user_id,
+            ])
+            if (totals(rows[0]).balanceHours < Number(record.hours))
+              v.fail(409, '사용 가능한 대체휴가 시간이 부족합니다.')
+          }
+          await db.query(
+            `UPDATE ${table} SET status=$1,decided_by=$2,decided_at=now() WHERE id=$3`,
+            [
+              action === 'approve' ? 'approved' : 'rejected',
+              req.session.userId,
+              req.params.id,
+            ],
+          )
+        })
+        res.status(204).end()
+      })
+    app.delete(`/api/${path}/:id`, async (req, res) => {
+      const result = await pool.query(
+        `DELETE FROM ${table} WHERE id=$1 AND user_id=$2 AND status IN ('pending','rejected')`,
+        [req.params.id, req.session.userId],
+      )
+      if (!result.rowCount)
+        v.fail(409, '본인의 미승인 기록만 삭제할 수 있습니다.')
+      res.status(204).end()
+    })
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const pool = await connectDatabase()
   const app = createApp(pool)
-  const port = Number(process.env.PORT ?? 3000)
-  app.listen(port, () => console.log(`MSP weekly review listening on ${port}`))
+  const server = app.listen(Number(process.env.PORT ?? 3000), () =>
+    console.log('MSP weekly review started'),
+  )
+  const stop = () =>
+    server.close(async () => {
+      await pool.end()
+      process.exit(0)
+    })
+  process.on('SIGTERM', stop)
+  process.on('SIGINT', stop)
 }

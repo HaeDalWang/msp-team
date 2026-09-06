@@ -1,151 +1,214 @@
-// 원본 prototype(src/ManagementViews.tsx OrganizationManagementView)의 DOM 구조를 그대로 옮긴 것.
-// 실제 PostgreSQL API(GET /api/organization, POST /api/organization/parts, PUT /api/organization/users/:id)에 연결되어 있으며, 실패 시에만 mock으로 fallback한다.
-// 파트/역할 수정 및 파트 추가는 admin만 가능하다(서버도 동일 규칙으로 재검증함).
 import { icon } from '../icons.js'
-import { entries as mockEntries } from '../data.js'
 import { session, isAdmin } from '../session.js'
+import { api } from '../api.js'
+import { escapeHtml as h } from '../html.js'
 
-const workHours = {
-  이주엽: '09:00 - 18:00', 정장훈: '10:00 - 19:00', 김이현: '09:00 - 18:00', 임종현: '08:30 - 17:30',
-  김범중: '10:00 - 19:00', 김성호: '08:00 - 17:00', 배승도: '09:00 - 18:00', 서채운: '09:00 - 18:00',
-  이용태: '08:00 - 17:00', 송민석: '09:00 - 18:00', 권하빈: '08:00 - 17:00', 조수현: '08:30 - 17:30', 정지우: '09:00 - 18:00',
+const roles = {
+  engineer: '엔지니어',
+  lead: '팀장',
+  executive: '상무',
+  admin: '관리자',
 }
-const roleDbToLabel = { engineer: '엔지니어', lead: '팀장', executive: '상무', admin: '관리자' }
-const roleLabelToDb = { 엔지니어: 'engineer', 팀장: 'lead', 상무: 'executive', 관리자: 'admin' }
-const roles = ['엔지니어', '팀장', '상무', '관리자']
-
-const mockParts = [
-  { id: 'leaf', name: 'Leaf', color: '#f6a612' },
-  { id: 'tiger', name: 'Tiger', color: '#d76a20' },
-  { id: 'dragon', name: 'Dragon', color: '#986ce3' },
-]
-
 const state = {
-  editMode: false,
-  partManagerOpen: false,
-  newPartName: '',
-  parts: mockParts,
-  members: mockEntries.map((entry) => ({
-    userId: `mock-${entry.name}`, version: 1, name: entry.name,
-    partId: mockParts.find((part) => part.name === entry.part)?.id ?? mockParts[0].id,
-    role: entry.name === '이주엽' ? '팀장' : entry.name === '배승도' ? '관리자' : '엔지니어',
-    hours: workHours[entry.name],
-    email: `${entry.name === '배승도' ? 'seungdo.bae' : entry.name.toLowerCase()}@csg.example`,
-  })),
-  apiError: '',
+  parts: [],
+  members: [],
+  error: '',
+  busy: false,
+  manager: false,
+  newPart: '',
+  partNames: {},
+  editing: null,
+  draft: {},
 }
-
+export const organizationDirty = () =>
+  Boolean(
+    state.editing ||
+    state.newPart ||
+    Object.keys(state.partNames).length ||
+    state.busy,
+  )
+export const discardOrganization = () => {
+  state.editing = null
+  state.newPart = ''
+  state.partNames = {}
+}
+export const organizationBusy = () => state.busy
 export async function loadOrganization() {
   try {
-    const response = await fetch('/api/organization')
-    if (!response.ok) throw new Error('load failed')
-    const body = await response.json()
-    state.parts = body.parts.length ? body.parts : mockParts
+    const body = await api('/api/organization')
+    state.parts = body.parts
     state.members = Object.entries(body.users).map(([userId, user]) => ({
-      userId, version: user.version, name: user.name, partId: user.partId,
-      role: roleDbToLabel[user.role] ?? '엔지니어', hours: workHours[user.name] ?? '09:00 - 18:00', email: `${userId}@csg.example`,
+      ...user,
+      userId,
     }))
-    state.apiError = ''
-  } catch {
-    state.apiError = '조직 데이터를 불러오지 못했습니다.'
+    state.error = ''
+  } catch (error) {
+    state.error = error.message
   }
 }
-
+function memberForm() {
+  const draft = state.draft
+  return `<section class="part-manager-panel"><h2>${state.editing === 'new' ? '구성원 추가' : '구성원 수정'}</h2><form id="member-form" class="holiday-form">
+    <label>이름<input data-member-field="name" required maxlength="100" value="${h(draft.name)}"></label>
+    <label>Slack 사용자 ID<input data-member-field="slackUserId" required pattern="[UW][A-Z0-9]+" title="Slack 프로필의 멤버 ID를 입력하세요" value="${h(draft.slackUserId ?? '')}"><small>Slack 프로필 → 더 보기 → 멤버 ID 복사</small></label>
+    <label>이메일<input data-member-field="email" type="email" value="${h(draft.email ?? '')}"></label>
+    <label>파트<select data-member-field="partId"><option value="">무소속</option>${state.parts.map((part) => `<option value="${h(part.id)}" ${part.id === draft.partId ? 'selected' : ''}>${h(part.name)}</option>`).join('')}</select></label>
+    <label>역할<select data-member-field="role">${Object.entries(roles)
+      .map(
+        ([value, label]) =>
+          `<option value="${value}" ${draft.role === value ? 'selected' : ''}>${label}</option>`,
+      )
+      .join('')}</select></label>
+    <label>출근<input data-member-field="workStart" type="time" required value="${h(draft.workStart ?? '09:00')}"></label><label>퇴근<input data-member-field="workEnd" type="time" required value="${h(draft.workEnd ?? '18:00')}"></label>
+    ${state.editing !== 'new' ? `<label><input data-member-field="active" type="checkbox" ${draft.active !== false ? 'checked' : ''}> 활성 구성원 (해제하면 로그인 차단)</label>` : ''}
+    <button class="primary" ${state.busy ? 'disabled' : ''}>저장</button><button type="button" id="member-cancel" ${state.busy ? 'disabled' : ''}>취소</button></form></section>`
+}
 export function renderOrganization() {
   const canEdit = isAdmin()
-  const editMode = canEdit && state.editMode
-  return `<main class="management-page organization-management">
-    <div class="management-heading">
-      <div><span class="eyebrow">ORGANIZATION ADMIN</span><h1>조직 및 권한 관리</h1><p>파트 이동, 역할, 시차 출근 정보를 한 곳에서 관리합니다.</p></div>
-      <div class="heading-actions">
-        ${canEdit ? `<button id="part-manager-toggle">${icon('Building2', 16)} 파트 관리</button>
-        <button id="edit-mode-toggle">${icon(editMode ? 'Eye' : 'Pencil', 16)}${editMode ? '열람 모드' : '수정 모드'}</button>
-        <button class="primary">${icon('Save', 16)} 변경사항 저장</button>` : ''}
-      </div>
-    </div>
-    ${state.apiError ? `<div class="comp-api-error" role="alert">${state.apiError}</div>` : ''}
-    ${editMode && state.partManagerOpen ? `<section class="part-manager-panel">
-      <header><div>${icon('Building2', 17)}<strong>파트 관리</strong></div><span>파트 이름을 바꾸면 소속 구성원 정보에도 즉시 반영됩니다.</span></header>
-      <div class="part-manager-list">
-        ${state.parts.map((part) => `<label>
-          <i style="background:${part.color ?? '#5fa8ff'}"></i><span>파트 이름</span>
-          <input data-rename-part="${part.id}" aria-label="${part.name} 파트 이름 변경" value="${part.name}">
-          <button ${state.members.some((member) => member.partId === part.id) ? 'disabled' : ''}>비활성화</button>
-        </label>`).join('')}
-        <label class="new-part-row"><i></i><span>새 파트</span><input id="new-part-name" aria-label="새 파트 이름" value="${state.newPartName}" placeholder="예: Platform"><button id="add-part">${icon('Plus', 14)} 파트 추가</button></label>
-      </div>
-    </section>` : ''}
-    <div class="permission-banner">${icon('ShieldCheck', 20)}<div><strong>열람: CSG MSP 전체</strong><span>수정: 관리자만</span></div><em>${icon('LockKeyhole', 14)} 현재 ${roleDbToLabel[session.user?.role] ?? '알 수 없음'}(${canEdit ? '수정 가능' : '열람만 가능'}) 권한으로 접속 중</em></div>
-    <div class="org-summary">
-      <div>${icon('UsersRound', 19)}<span>전체 인원<strong>${state.members.length}명</strong></span></div>
-      <div>${icon('ArrowRightLeft', 19)}<span>이번 달 파트 이동<strong>2건</strong></span></div>
-      <div>${icon('Crown', 19)}<span>관리 권한자<strong>${state.members.filter((member) => member.role !== '엔지니어').length}명</strong></span></div>
-      ${canEdit ? `<button>${icon('Plus', 16)} 구성원 추가</button>` : ''}
-    </div>
-    <div class="org-columns">
-      ${['무소속', ...state.parts.map((part) => part.name)].filter((name, index, list) => list.indexOf(name) === index).map((partName) => {
-        const part = state.parts.find((item) => item.name === partName)
-        const members = state.members.filter((member) => (part ? member.partId === part.id : !member.partId))
-        if (!part && !members.length) return ''
-        return `<section class="org-column">
-        <header><div><span class="part-color" style="background:${part?.color ?? '#5f6672'}"></span><h2>${partName}</h2></div><span>${members.length}명</span></header>
-        <div class="member-list">
-          ${members.map((member) => `<article class="member-card">
-            <div class="member-avatar">${member.name.slice(-1)}</div>
-            <div class="member-info"><div><h3>${member.name}</h3>${member.role !== '엔지니어' ? `<span>${member.role}</span>` : ''}</div><p>${member.email}</p><small>${icon('Clock', 13)} ${member.hours}</small></div>
-            <div class="member-controls">
-              <label>파트<select data-member="${member.userId}" data-field="partId" aria-label="소속 파트 변경" ${editMode ? '' : 'disabled'}>${state.parts.map((option) => `<option value="${option.id}" ${member.partId === option.id ? 'selected' : ''}>${option.name}</option>`).join('')}</select></label>
-              <label>역할<select data-member="${member.userId}" data-field="role" aria-label="역할 변경" ${editMode ? '' : 'disabled'}>${roles.map((option) => `<option ${member.role === option ? 'selected' : ''}>${option}</option>`).join('')}</select></label>
-            </div>
-          </article>`).join('')}
-        </div>
-      </section>`
-      }).join('')}
-    </div>
-    <section class="change-history">
-      <header><h2>최근 조직 변경</h2><button>전체 이력</button></header>
-      <div><span class="history-icon">${icon('ArrowRightLeft', 15)}</span><p><strong>김이현</strong>님이 Dragon에서 Leaf로 이동했습니다.</p><time>2026.08.17 · 배승도</time></div>
-      <div><span class="history-icon">${icon('UserCog', 15)}</span><p><strong>배승도</strong>님에게 관리자 권한이 부여되었습니다.</p><time>2026.08.12 · 이주엽</time></div>
-    </section>
-  </main>`
+  return `<main class="management-page organization-management"><div class="management-heading"><div><span class="eyebrow">ORGANIZATION ADMIN</span><h1>조직 및 권한 관리</h1><p>파트, 역할과 출퇴근 시간을 관리합니다.</p></div><div class="heading-actions">${canEdit ? `<button id="part-manager-toggle">파트 관리</button><button id="member-add" class="primary" ${state.busy ? 'disabled' : ''}>구성원 추가</button>` : ''}</div></div>
+    ${state.error ? `<div class="comp-api-error" role="alert">${h(state.error)} <button id="organization-retry">다시 조회</button></div>` : ''}
+    <div class="permission-banner">${icon('ShieldCheck', 20)}<div><strong>팀 구성원 열람</strong><span>수정: 관리자</span></div><em>현재 ${h(roles[session.user?.role] ?? '알 수 없음')}</em></div>
+    ${canEdit && state.manager ? `<section class="part-manager-panel"><h2>파트 관리</h2><p>소속 구성원이 없는 파트만 삭제할 수 있습니다.</p><div class="part-manager-list">${state.parts.map((part) => `<form data-part-form="${h(part.id)}"><label>파트 이름<input data-part-name="${h(part.id)}" required maxlength="100" value="${h(state.partNames[part.id] ?? part.name)}"></label><button ${state.busy ? 'disabled' : ''}>이름 저장</button><button type="button" data-delete-part="${h(part.id)}" ${state.busy || state.members.some((member) => member.partId === part.id) ? 'disabled' : ''}>삭제</button></form>`).join('')}<form id="part-add-form"><label>새 파트<input id="new-part-name" required maxlength="100" value="${h(state.newPart)}"></label><button ${state.busy ? 'disabled' : ''}>추가</button></form></div></section>` : ''}
+    ${canEdit && state.editing ? memberForm() : ''}
+    <div class="org-summary"><div><span>활성 구성원<strong>${state.members.filter((member) => member.active !== false).length}명</strong></span></div><div><span>파트<strong>${state.parts.length}개</strong></span></div><div><span>관리자<strong>${state.members.filter((member) => member.role === 'admin' && member.active !== false).length}명</strong></span></div></div>
+    <div class="org-columns">${[{ id: null, name: '무소속' }, ...state.parts]
+      .map((part) => {
+        const members = state.members.filter(
+          (member) => (member.partId ?? null) === part.id,
+        )
+        return `<section class="org-column"><header><h2>${h(part.name)}</h2><span>${members.length}명</span></header><div class="member-list">${members.map((member) => `<article class="member-card"><div class="member-avatar">${h(member.name.slice(-1))}</div><div class="member-info"><div><h3>${h(member.name)}</h3><span>${h(roles[member.role] ?? member.role)}${member.active === false ? ' · 비활성' : ''}</span></div><p>${h(member.email || '이메일 미등록')}</p><small>${h(member.workStart ?? '')}–${h(member.workEnd ?? '')}</small></div>${canEdit ? `<button data-edit-member="${h(member.userId)}" ${state.busy ? 'disabled' : ''}>수정</button>` : ''}</article>`).join('') || '<p>구성원이 없습니다.</p>'}</div></section>`
+      })
+      .join('')}</div></main>`
 }
-
 export function bindOrganization(root, rerender) {
-  const canEdit = isAdmin()
-  root.querySelector('#part-manager-toggle')?.addEventListener('click', () => { state.partManagerOpen = !state.partManagerOpen; rerender() })
-  root.querySelector('#edit-mode-toggle')?.addEventListener('click', () => { state.editMode = !state.editMode; rerender() })
-  root.querySelectorAll('[data-rename-part]').forEach((input) => input.addEventListener('input', (event) => {
-    if (!canEdit) return
-    const id = input.dataset.renamePart
-    state.parts = state.parts.map((part) => part.id === id ? { ...part, name: event.target.value } : part)
+  if (state.busy)
+    root
+      .querySelectorAll('form input, form select, form textarea')
+      .forEach((input) => {
+        input.disabled = true
+      })
+  async function run(action) {
+    if (state.busy) return
+    state.busy = true
+    state.error = ''
     rerender()
-  }))
-  root.querySelector('#new-part-name')?.addEventListener('input', (event) => { state.newPartName = event.target.value })
-  root.querySelector('#add-part')?.addEventListener('click', async () => {
-    if (!canEdit) return
-    const name = state.newPartName.trim()
-    if (!name || state.parts.some((part) => part.name.toLowerCase() === name.toLowerCase())) return
     try {
-      const response = await fetch('/api/organization/parts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) })
-      const created = await response.json()
-      state.parts = [...state.parts, { id: created.id, name, color: '#5fa8ff' }]
-    } catch { /* API 실패 시 화면은 이전 상태를 유지한다 */ }
-    state.newPartName = ''
+      await action()
+      await loadOrganization()
+    } catch (error) {
+      state.error = error.message
+    } finally {
+      state.busy = false
+      rerender()
+    }
+  }
+  root
+    .querySelector('#organization-retry')
+    ?.addEventListener('click', () => run(async () => {}))
+  if (!isAdmin()) return
+  root.querySelector('#part-manager-toggle')?.addEventListener('click', () => {
+    state.manager = !state.manager
     rerender()
   })
-  root.querySelectorAll('[data-member]').forEach((select) => select.addEventListener('change', async (event) => {
-    if (!canEdit) return
-    const userId = select.dataset.member
-    const field = select.dataset.field
-    const member = state.members.find((item) => item.userId === userId)
-    if (!member) return
-    const value = event.target.value
-    try {
-      const body = field === 'role' ? { role: roleLabelToDb[value], version: member.version } : { partId: value, version: member.version }
-      const response = await fetch(`/api/organization/users/${encodeURIComponent(userId)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-      if (response.status === 409) { await loadOrganization(); rerender(); return }
-      state.members = state.members.map((item) => item.userId === userId ? { ...item, [field]: value, version: item.version + 1 } : item)
-    } catch { /* API 실패 시 화면은 이전 상태를 유지한다 */ }
+  const canReplace = () =>
+    !state.busy &&
+    (!state.editing || confirm('입력 중인 구성원 변경 내용을 버릴까요?'))
+  root.querySelector('#member-add')?.addEventListener('click', () => {
+    if (!canReplace()) return
+    state.editing = 'new'
+    state.draft = {
+      name: '',
+      slackUserId: '',
+      email: '',
+      role: 'engineer',
+      partId: null,
+      workStart: '09:00',
+      workEnd: '18:00',
+      active: true,
+    }
     rerender()
-  }))
+  })
+  root.querySelectorAll('[data-edit-member]').forEach((button) =>
+    button.addEventListener('click', () => {
+      if (!canReplace()) return
+      state.editing = button.dataset.editMember
+      state.draft = {
+        ...state.members.find((member) => member.userId === state.editing),
+      }
+      rerender()
+    }),
+  )
+  root.querySelector('#member-cancel')?.addEventListener('click', () => {
+    state.editing = null
+    rerender()
+  })
+  root.querySelectorAll('[data-member-field]').forEach((input) =>
+    input.addEventListener('input', (event) => {
+      state.draft[input.dataset.memberField] =
+        input.type === 'checkbox' ? event.target.checked : event.target.value
+    }),
+  )
+  root.querySelector('#member-form')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+    run(async () => {
+      const creating = state.editing === 'new'
+      await api(
+        creating
+          ? '/api/organization/users'
+          : `/api/organization/users/${encodeURIComponent(state.editing)}`,
+        {
+          method: creating ? 'POST' : 'PUT',
+          body: JSON.stringify({
+            ...state.draft,
+            partId: state.draft.partId || null,
+          }),
+        },
+      )
+      state.editing = null
+    })
+  })
+  root.querySelectorAll('[data-part-name]').forEach((input) =>
+    input.addEventListener('input', (event) => {
+      state.partNames[input.dataset.partName] = event.target.value
+    }),
+  )
+  root.querySelectorAll('[data-part-form]').forEach((form) =>
+    form.addEventListener('submit', (event) => {
+      event.preventDefault()
+      const id = form.dataset.partForm
+      const name =
+        state.partNames[id] ?? state.parts.find((part) => part.id === id)?.name
+      run(async () => {
+        await api(`/api/organization/parts/${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          body: JSON.stringify({ name: name.trim() }),
+        })
+        delete state.partNames[id]
+      })
+    }),
+  )
+  root.querySelectorAll('[data-delete-part]').forEach((button) =>
+    button.addEventListener('click', () => {
+      if (confirm('이 빈 파트를 삭제할까요?'))
+        run(() =>
+          api(
+            `/api/organization/parts/${encodeURIComponent(button.dataset.deletePart)}`,
+            { method: 'DELETE' },
+          ),
+        )
+    }),
+  )
+  root.querySelector('#new-part-name')?.addEventListener('input', (event) => {
+    state.newPart = event.target.value
+  })
+  root.querySelector('#part-add-form')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+    run(async () => {
+      await api('/api/organization/parts', {
+        method: 'POST',
+        body: JSON.stringify({ name: state.newPart.trim() }),
+      })
+      state.newPart = ''
+    })
+  })
 }

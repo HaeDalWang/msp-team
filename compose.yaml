@@ -3,7 +3,10 @@ name: msp-weekly-review
 services:
   app:
     build: .
+    restart: unless-stopped
     environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      LOCAL_DEV_USER_ID: ${LOCAL_DEV_USER_ID:-}
       PORT: 3000
       DATABASE_URL: postgresql://msp:${POSTGRES_PASSWORD}@db:5432/msp
       SEED_FILE: /app/seed.json
@@ -15,13 +18,20 @@ services:
     volumes:
       - ./seed.json:/app/seed.json:ro
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     depends_on:
       db:
         condition: service_healthy
 
   db:
     image: postgres:18.6-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: msp
       POSTGRES_USER: msp

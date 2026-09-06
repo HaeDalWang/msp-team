@@ -1,0 +1,25 @@
+# Opt-in HTTPS: docker compose -f compose.yaml -f compose.production.yaml up --build -d
+services:
+  app:
+    environment:
+      NODE_ENV: production
+      LOCAL_DEV_USER_ID: ""
+      SLACK_REDIRECT_URI: https://${APP_DOMAIN:?APP_DOMAIN is required}/auth/slack/callback
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+volumes:
+  caddy-data:
+  caddy-config:

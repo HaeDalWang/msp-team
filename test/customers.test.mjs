@@ -1,138 +1,132 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createApp } from '../src/server.mjs'
-
-test('GET /api/customers groups customers under their assigned engineer', async () => {
-  const database = {
-    query: async (sql) => {
-      if (sql.includes('FROM users')) {
-        return { rows: [
-          { id: 'kim-beomjung', name: '김범중', part: 'Tiger' },
-          { id: 'bae-seungdo', name: '배승도', part: 'Tiger' },
-        ] }
-      }
-      if (sql.includes('FROM customer_assignments')) {
-        return { rows: [
-          { user_id: 'kim-beomjung', customer_id: 1, customer_name: '케이비자산운용_DI', since: '2022-06-01', tier: 'Advanced', mcr: false, key_account: true, note: '' },
-          { user_id: 'bae-seungdo', customer_id: 2, customer_name: '이동의즐거움', since: '2022-09-01', tier: 'Enterprise', mcr: true, key_account: false, note: null },
-        ] }
-      }
-      return { rows: [] }
+import { fixture } from './fixtures.mjs'
+test('customer creation, full editing, reassignment and deletion persist', async (t) => {
+  const { request } = await fixture(t)
+  let res = await request('/api/customers', {
+    method: 'POST',
+    body: {
+      name: 'Customer',
+      userId: 'user',
+      tier: 'Enterprise',
+      mcr: true,
+      keyAccount: true,
+      since: '2026-09-01',
+      note: 'memo',
     },
-  }
-  const server = createApp(database).listen(0)
-  await new Promise((resolve) => server.once('listening', resolve))
-  try {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/customers`)
-    const body = await response.json()
-    assert.equal(response.status, 200)
-    assert.deepEqual(body.owners, [
-      { userId: 'kim-beomjung', name: '김범중', part: 'Tiger', customers: [
-        { id: 1, name: '케이비자산운용_DI', since: '2022-06-01', tier: 'Advanced', mcr: false, keyAccount: true, note: '' },
-      ] },
-      { userId: 'bae-seungdo', name: '배승도', part: 'Tiger', customers: [
-        { id: 2, name: '이동의즐거움', since: '2022-09-01', tier: 'Enterprise', mcr: true, keyAccount: false, note: '' },
-      ] },
-    ])
-  } finally {
-    await new Promise((resolve) => server.close(resolve))
-  }
-})
-
-test('GET /api/customers includes engineers who have no customer assigned yet', async () => {
-  const database = {
-    query: async (sql) => {
-      if (sql.includes('FROM users')) {
-        return { rows: [
-          { id: 'kim-beomjung', name: '김범중', part: 'Tiger' },
-          { id: 'jeong-jiwoo', name: '정지우', part: 'Dragon' },
-        ] }
-      }
-      if (sql.includes('FROM customer_assignments')) {
-        return { rows: [
-          { user_id: 'kim-beomjung', customer_id: 1, customer_name: '케이비자산운용_DI', since: '2022-06-01', tier: 'Advanced', mcr: false, key_account: false, note: '' },
-        ] }
-      }
-      return { rows: [] }
+  })
+  assert.equal(res.status, 201)
+  const { id } = await res.json()
+  let owners = (await (await request('/api/customers')).json()).owners
+  assert.equal(owners.length, 4)
+  assert.equal(
+    owners.find((o) => o.userId === 'user').customers[0].since,
+    '2026-09-01',
+  )
+  res = await request('/api/customers/' + id, {
+    method: 'PUT',
+    body: {
+      userId: 'other',
+      name: 'Renamed',
+      since: null,
+      note: 'new',
+      mcr: false,
     },
-  }
-  const server = createApp(database).listen(0)
-  await new Promise((resolve) => server.once('listening', resolve))
-  try {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/customers`)
-    const body = await response.json()
-    assert.equal(response.status, 200)
-    assert.deepEqual(body.owners.find((owner) => owner.userId === 'jeong-jiwoo'), { userId: 'jeong-jiwoo', name: '정지우', part: 'Dragon', customers: [] })
-  } finally {
-    await new Promise((resolve) => server.close(resolve))
-  }
+  })
+  assert.equal(res.status, 204)
+  owners = (await (await request('/api/customers')).json()).owners
+  assert.equal(owners.find((o) => o.userId === 'user').customers.length, 0)
+  const c = owners.find((o) => o.userId === 'other').customers[0]
+  assert.equal(c.name, 'Renamed')
+  assert.equal(c.since, null)
+  assert.equal(c.mcr, false)
+  assert.equal(
+    (await request('/api/customers/' + id, { method: 'DELETE' })).status,
+    204,
+  )
+  assert.equal(
+    (await request('/api/customers/' + id, { method: 'DELETE' })).status,
+    404,
+  )
 })
-
-test('POST /api/customers creates a customer with tier/mcr/keyAccount and assigns it to an engineer', async () => {
-  const calls = []
-  const database = { query: async (sql, values = []) => { calls.push({ sql, values }); return { rows: sql.includes('INSERT INTO customers') ? [{ id: 9 }] : [] } } }
-  const server = createApp(database).listen(0)
-  await new Promise((resolve) => server.once('listening', resolve))
-  try {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/customers`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: '신규고객사', userId: 'bae-seungdo', tier: 'Enterprise', mcr: true, keyAccount: true, since: '2026-09-04', note: '' }),
+test('invalid assignments and failed transfer preserve customer state atomically', async (t) => {
+  const { request, pool } = await fixture(t)
+  assert.equal(
+    (
+      await request('/api/customers', {
+        method: 'POST',
+        body: { name: 'orphan', userId: 'missing' },
+      })
+    ).status,
+    400,
+  )
+  assert.equal(
+    (await pool.query('SELECT count(*)::int AS n FROM customers')).rows[0].n,
+    0,
+  )
+  const { id } = await (
+    await request('/api/customers', {
+      method: 'POST',
+      body: { name: 'safe', userId: 'user' },
     })
-    assert.equal(response.status, 201)
-    assert.deepEqual(await response.json(), { id: 9 })
-    const insertCall = calls.find((call) => call.sql.includes('INSERT INTO customers'))
-    assert.ok(insertCall)
-    assert.deepEqual(insertCall.values, ['신규고객사', '2026-09-04', 'Enterprise', true, true, ''])
-    assert.ok(calls.some((call) => call.sql.includes('INSERT INTO customer_assignments')))
-  } finally {
-    await new Promise((resolve) => server.close(resolve))
-  }
+  ).json()
+  await pool.query(
+    "CREATE FUNCTION reject_assignment() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.user_id='other' THEN RAISE EXCEPTION 'forced test failure'; END IF; RETURN NEW; END $$",
+  )
+  await pool.query(
+    'CREATE TRIGGER reject_assignment BEFORE INSERT ON customer_assignments FOR EACH ROW EXECUTE FUNCTION reject_assignment()',
+  )
+  assert.equal(
+    (
+      await request('/api/customers/' + id, {
+        method: 'PUT',
+        body: { userId: 'other', name: 'changed' },
+      })
+    ).status,
+    500,
+  )
+  assert.equal(
+    (await pool.query('SELECT name FROM customers WHERE id=$1', [id])).rows[0]
+      .name,
+    'safe',
+  )
+  assert.equal(
+    (
+      await pool.query(
+        'SELECT user_id FROM customer_assignments WHERE customer_id=$1',
+        [id],
+      )
+    ).rows[0].user_id,
+    'user',
+  )
 })
-
-test('POST /api/customers rejects an invalid tier', async () => {
-  const database = { query: async () => ({ rows: [] }) }
-  const server = createApp(database).listen(0)
-  await new Promise((resolve) => server.once('listening', resolve))
-  try {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/customers`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: '신규고객사', userId: 'bae-seungdo', tier: 'Basic' }),
-    })
-    assert.equal(response.status, 400)
-  } finally {
-    await new Promise((resolve) => server.close(resolve))
-  }
-})
-
-test('DELETE /api/customers/:id removes the customer and its assignments', async () => {
-  const calls = []
-  const database = { query: async (sql, values = []) => { calls.push({ sql, values }); return { rows: [] } } }
-  const server = createApp(database).listen(0)
-  await new Promise((resolve) => server.once('listening', resolve))
-  try {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/customers/9`, { method: 'DELETE' })
-    assert.equal(response.status, 204)
-    assert.ok(calls.some((call) => call.sql.includes('DELETE FROM customers') && call.values[0] === '9'))
-  } finally {
-    await new Promise((resolve) => server.close(resolve))
-  }
-})
-
-test('PUT /api/customers/:id updates services, note, and reassigns the owner', async () => {
-  const calls = []
-  const database = { query: async (sql, values = []) => { calls.push({ sql, values }); return { rows: [] } } }
-  const server = createApp(database).listen(0)
-  await new Promise((resolve) => server.once('listening', resolve))
-  try {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/customers/9`, {
-      method: 'PUT', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ userId: 'kim-beomjung', services: ['Enterprise Care'], note: '인수인계 완료' }),
-    })
-    assert.equal(response.status, 204)
-    assert.ok(calls.some((call) => call.sql.includes('UPDATE customers')))
-    assert.ok(calls.some((call) => call.sql.includes('DELETE FROM customer_assignments')))
-    assert.ok(calls.some((call) => call.sql.includes('INSERT INTO customer_assignments')))
-  } finally {
-    await new Promise((resolve) => server.close(resolve))
-  }
+test('customer duplicate and invalid field errors are explicit', async (t) => {
+  const { request } = await fixture(t)
+  for (const fields of [
+    { tier: 'bad' },
+    { mcr: 'false' },
+    { since: '2026-02-30' },
+  ])
+    assert.equal(
+      (
+        await request('/api/customers', {
+          method: 'POST',
+          body: { name: 'x', userId: 'user', ...fields },
+        })
+      ).status,
+      400,
+    )
+  await request('/api/customers', {
+    method: 'POST',
+    body: { name: 'same', userId: 'user' },
+  })
+  assert.equal(
+    (
+      await request('/api/customers', {
+        method: 'POST',
+        body: { name: 'same', userId: 'other' },
+      })
+    ).status,
+    409,
+  )
 })

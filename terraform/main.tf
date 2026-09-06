@@ -51,10 +51,10 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# --- 보안 그룹: HTTP(80), SSH(22, 키페어 지정 시에만 실질적으로 쓰임)만 외부에 연다.
+# HTTPS와 인증서 발급용 HTTP. SSH는 명시한 CIDR에만 개방한다.
 resource "aws_security_group" "app" {
   name        = "${var.project_name}-app"
-  description = "MSP weekly review app: HTTP(80) + SSH(22)"
+  description = "MSP weekly review HTTPS"
   vpc_id      = aws_vpc.this.id
 
   ingress {
@@ -62,14 +62,24 @@ resource "aws_security_group" "app" {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.web_allowed_cidrs
   }
   ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
+    description = "HTTPS"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.web_allowed_cidrs
+  }
+  dynamic "ingress" {
+    for_each = length(var.ssh_allowed_cidrs) > 0 ? [1] : []
+    content {
+      description = "SSH from explicitly allowed networks"
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = var.ssh_allowed_cidrs
+    }
   }
   egress {
     from_port   = 0
@@ -144,4 +154,11 @@ resource "aws_instance" "app" {
   }
 
   tags = { Name = "${var.project_name}-app" }
+}
+
+resource "aws_eip" "app" {
+  count    = var.allocate_elastic_ip ? 1 : 0
+  domain   = "vpc"
+  instance = aws_instance.app.id
+  tags     = { Name = "${var.project_name}-app" }
 }

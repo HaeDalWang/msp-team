@@ -3,6 +3,10 @@
 export function icon(name, size = 16) {
   const def = window.lucide?.icons?.[name]
   if (!def) return ''
-  const el = window.lucide.createElement(def, { width: size, height: size, class: 'lucide-icon' })
+  const el = window.lucide.createElement(def, {
+    width: size,
+    height: size,
+    class: 'lucide-icon',
+  })
   return el.outerHTML
 }

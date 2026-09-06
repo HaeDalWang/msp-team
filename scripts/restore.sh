@@ -1,51 +1,40 @@
 #!/usr/bin/env bash
-# S3에서 pg_dump 백업 파일을 가져와 PostgreSQL 컨테이너에 복원한다.
-# 사용법: scripts/restore.sh <s3-key 또는 latest>
-# 필수 환경변수: BACKUP_S3_BUCKET (예: msp-weekly-review-backups)
-# 선택 환경변수: BACKUP_S3_PREFIX (기본 backups)
-#
-# 주의: 이 스크립트는 기존 msp 데이터베이스를 통째로 덮어씁니다. 되돌릴 수 없습니다.
+# 기존 DB를 교체한다. 실패 시 단일 트랜잭션으로 롤백하고 앱을 다시 시작한다.
 set -euo pipefail
-
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$here"
-
-: "${BACKUP_S3_BUCKET:?BACKUP_S3_BUCKET 환경변수가 필요합니다. 예: export BACKUP_S3_BUCKET=msp-weekly-review-backups}"
+: "${BACKUP_S3_BUCKET:?BACKUP_S3_BUCKET 환경변수가 필요합니다.}"
 prefix="${BACKUP_S3_PREFIX:-backups}"
-target="${1:-}"
-
-if [ -z "$target" ]; then
-  echo "사용법: scripts/restore.sh <s3-key 또는 latest>" >&2
-  exit 1
-fi
-
-if [ "$target" = "latest" ]; then
-  key="$(aws s3api list-objects-v2 --bucket "$BACKUP_S3_BUCKET" --prefix "${prefix}/" \
-    --query 'sort_by(Contents,&LastModified)[-1].Key' --output text)"
-  if [ -z "$key" ] || [ "$key" = "None" ]; then
-    echo "[restore] ${prefix}/ 안에 백업 파일이 없습니다." >&2
-    exit 1
-  fi
+target="${1:?사용법: scripts/restore.sh <파일명|S3 key|latest>}"
+if [[ "$target" == latest ]]; then
+  key="$(aws s3api list-objects-v2 --bucket "$BACKUP_S3_BUCKET" --prefix "${prefix}/" --query 'sort_by(Contents[?ends_with(Key, `.dump`)], &LastModified)[-1].Key' --output text)"
+  [[ -n "$key" && "$key" != None ]] || { echo '백업이 없습니다.' >&2; exit 1; }
+elif [[ "$target" == */* ]]; then
+  key="$target"
 else
   key="${prefix}/${target}"
 fi
-
-filename="$(basename "$key")"
-local_path="/tmp/${filename}"
-
-echo "[restore] 복원 대상: s3://${BACKUP_S3_BUCKET}/${key}"
-read -r -p "기존 msp 데이터베이스를 덮어씁니다. 계속하시겠습니까? (yes 입력) " confirm
-if [ "$confirm" != "yes" ]; then
-  echo "[restore] 취소했습니다."
-  exit 1
-fi
-
+echo "[restore] 대상: s3://${BACKUP_S3_BUCKET}/${key}"
+read -r -p '기존 DB를 교체합니다. 계속하려면 yes 입력: ' confirm
+[[ "$confirm" == yes ]] || exit 1
+temp_dir="$(mktemp -d)"
+local_path="$temp_dir/restore.dump"
+restart_app=false
+cleanup() {
+  local status=$?
+  if [[ "$restart_app" == true ]]; then docker compose start app || status=1; fi
+  rm -f "$local_path"
+  rmdir "$temp_dir"
+  exit "$status"
+}
+trap cleanup EXIT
 aws s3 cp "s3://${BACKUP_S3_BUCKET}/${key}" "$local_path" --only-show-errors
-docker compose cp "$local_path" "db:/tmp/${filename}"
-
-echo "[restore] pg_restore 실행 중..."
-docker compose exec -T db pg_restore -U msp -d msp --clean --if-exists "/tmp/${filename}"
-docker compose exec -T db rm -f "/tmp/${filename}"
-rm -f "$local_path"
-
-echo "[restore] 완료했습니다. 앱 컨테이너를 재기동해 연결을 갱신하세요: docker compose restart app"
+docker compose exec -T db pg_restore --list < "$local_path" > /dev/null
+if [[ -n "$(docker compose ps --status running -q app)" ]]; then
+  restart_app=true
+  docker compose stop app
+fi
+# 쓰기를 중지한 현재 DB를 보존한다. 백업 실패 시 복원하지 않는다.
+bash scripts/backup.sh
+docker compose exec -T db pg_restore -U msp -d msp --clean --if-exists --exit-on-error --single-transaction < "$local_path"
+echo '[restore] DB 복원 완료. 실행 중이던 앱을 다시 시작합니다.'

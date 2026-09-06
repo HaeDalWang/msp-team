@@ -1,35 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createApp } from '../src/server.mjs'
-
-async function withServer(run) {
-  const server = createApp({ query: async () => ({ rows: [] }) }).listen(0)
-  await new Promise((resolve) => server.once('listening', resolve))
-  try {
-    return await run(`http://127.0.0.1:${server.address().port}`)
-  } finally {
-    await new Promise((resolve) => server.close(resolve))
-  }
-}
-
-test('health endpoint reports the app is ready', async () => {
-  await withServer(async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/health`)
-    assert.equal(response.status, 200)
-    assert.deepEqual(await response.json(), { ok: true })
-  })
-})
-
-test('bootstrap endpoint returns people grouped with their part', async () => {
-  const database = {
-    query: async (sql) => ({ rows: sql.includes('FROM users') ? [{ id: 'usr-hong', name: '홍길동', part: 'Tiger', role: 'engineer' }] : [] }),
-  }
-  const server = createApp(database).listen(0)
-  await new Promise((resolve) => server.once('listening', resolve))
-  try {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/bootstrap`)
-    assert.deepEqual(await response.json(), { users: [{ id: 'usr-hong', name: '홍길동', part: 'Tiger', role: 'engineer' }] })
-  } finally {
-    await new Promise((resolve) => server.close(resolve))
-  }
+import { fixture } from './fixtures.mjs'
+test('health checks real database and bootstrap returns active users with hours', async (t) => {
+  const { request, pool } = await fixture(t)
+  assert.equal((await request('/health', { user: null })).status, 200)
+  const res = await request('/api/bootstrap')
+  assert.equal(res.status, 200)
+  const { users } = await res.json()
+  assert.equal(users.length, 4)
+  assert.equal(users[0].workStart, '09:00')
+  await pool.query("UPDATE users SET active=false WHERE id='other'")
+  assert.equal((await (await request('/api/bootstrap')).json()).users.length, 3)
 })

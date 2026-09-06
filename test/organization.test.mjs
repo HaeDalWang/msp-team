@@ -1,61 +1,109 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createApp } from '../src/server.mjs'
-
-test('GET /api/organization returns parts and users keyed by id with version', async () => {
-  const database = {
-    query: async (sql) => {
-      if (sql.includes('FROM parts')) return { rows: [{ id: 'part-tiger', name: 'Tiger', color: '#d76a20' }] }
-      if (sql.includes('FROM users')) return { rows: [{ id: 'bae-seungdo', name: '배승도', part_id: 'part-tiger', role: 'admin', version: 3 }] }
-      return { rows: [] }
-    },
-  }
-  const server = createApp(database).listen(0)
-  await new Promise((resolve) => server.once('listening', resolve))
-  try {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/organization`)
-    const body = await response.json()
-    assert.equal(response.status, 200)
-    assert.deepEqual(body.parts, [{ id: 'part-tiger', name: 'Tiger', color: '#d76a20' }])
-    assert.deepEqual(body.users['bae-seungdo'], { name: '배승도', partId: 'part-tiger', role: 'admin', version: 3 })
-  } finally {
-    await new Promise((resolve) => server.close(resolve))
-  }
-})
-
-test('POST /api/organization/parts creates a new part', async () => {
-  const calls = []
-  const database = { query: async (sql, values = []) => { calls.push({ sql, values }); return { rows: sql.includes('INSERT INTO parts') ? [{ id: 'part-platform' }] : [] } } }
-  const server = createApp(database).listen(0)
-  await new Promise((resolve) => server.once('listening', resolve))
-  try {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/organization/parts`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Platform' }),
+import { fixture } from './fixtures.mjs'
+test('organization user/part CRUD supports new parts, unassigned users and stale version guards', async (t) => {
+  const { request } = await fixture(t)
+  const { id } = await (
+    await request('/api/organization/parts', {
+      user: 'admin',
+      method: 'POST',
+      body: { name: 'Platform' },
     })
-    assert.equal(response.status, 201)
-    assert.deepEqual(await response.json(), { id: 'part-platform' })
-  } finally {
-    await new Promise((resolve) => server.close(resolve))
-  }
-})
-
-test('PUT /api/organization/users/:id enforces optimistic concurrency via version', async () => {
-  const calls = []
-  const database = {
-    query: async (sql, values = []) => {
-      calls.push({ sql, values })
-      if (sql.includes('UPDATE users')) return { rowCount: 0 }
-      return { rows: [] }
+  ).json()
+  assert.equal(
+    (
+      await request('/api/organization/parts/' + id, {
+        user: 'admin',
+        method: 'PUT',
+        body: { name: 'New Platform' },
+      })
+    ).status,
+    204,
+  )
+  let res = await request('/api/organization/users', {
+    user: 'admin',
+    method: 'POST',
+    body: {
+      name: 'New person',
+      slackUserId: 'UNEW',
+      partId: id,
+      role: 'engineer',
+      workStart: '08:30',
+      workEnd: '17:30',
     },
-  }
-  const server = createApp(database).listen(0)
-  await new Promise((resolve) => server.once('listening', resolve))
-  try {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/organization/users/bae-seungdo`, {
-      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ partId: 'part-tiger', version: 1 }),
-    })
-    assert.equal(response.status, 409)
-  } finally {
-    await new Promise((resolve) => server.close(resolve))
-  }
+  })
+  assert.equal(res.status, 201)
+  const person = await res.json()
+  assert.equal(
+    (
+      await request('/api/organization/parts/' + id, {
+        user: 'admin',
+        method: 'DELETE',
+      })
+    ).status,
+    409,
+  )
+  res = await request('/api/organization/users/' + person.id, {
+    user: 'admin',
+    method: 'PUT',
+    body: { partId: null, version: 1 },
+  })
+  assert.equal(res.status, 204)
+  assert.equal(
+    (
+      await request('/api/organization/users/' + person.id, {
+        user: 'admin',
+        method: 'PUT',
+        body: { role: 'lead', version: 1 },
+      })
+    ).status,
+    409,
+  )
+  const body = await (
+    await request('/api/organization', { user: 'admin' })
+  ).json()
+  assert.equal(body.users[person.id].partId, null)
+  assert.equal(body.users[person.id].workStart, '08:30')
+  assert.equal(
+    (
+      await request('/api/organization/parts/' + id, {
+        user: 'admin',
+        method: 'DELETE',
+      })
+    ).status,
+    204,
+  )
+})
+test('last administrator cannot be removed and invalid roles fail', async (t) => {
+  const { request } = await fixture(t)
+  assert.equal(
+    (
+      await request('/api/organization/users/admin', {
+        user: 'admin',
+        method: 'PUT',
+        body: { role: 'engineer', version: 1 },
+      })
+    ).status,
+    409,
+  )
+  assert.equal(
+    (
+      await request('/api/organization/users/admin', {
+        user: 'admin',
+        method: 'PUT',
+        body: { active: false, version: 1 },
+      })
+    ).status,
+    409,
+  )
+  assert.equal(
+    (
+      await request('/api/organization/users/user', {
+        user: 'admin',
+        method: 'PUT',
+        body: { role: 'superadmin', version: 1 },
+      })
+    ).status,
+    400,
+  )
 })
