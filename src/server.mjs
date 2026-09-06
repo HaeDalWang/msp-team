@@ -233,10 +233,15 @@ export function createApp(pool, env = process.env) {
     }
   })
   app.put('/api/reviews', async (request, response, next) => {
-    const { userId, weekEnd, workHighlights, actionItems, topsProjects, otherNotes } = request.body
+    const { userId, weekEnd, workHighlights, actionItems, topsProjects, otherNotes, ticketsNew, ticketsInProgress, ticketsDone } = request.body
     if (![userId, weekEnd, workHighlights, actionItems, topsProjects, otherNotes].every((value) => typeof value === 'string' && value.trim())) return response.status(400).json({ error: '네 개의 회고 항목은 모두 필수입니다.' })
+    const tickets = [ticketsNew, ticketsInProgress, ticketsDone].map((value) => Number(value) || 0)
+    if (tickets.some((value) => value < 0)) return response.status(400).json({ error: '티켓 수는 0 이상이어야 합니다.' })
     try {
-      await pool.query('INSERT INTO reviews (user_id, week_end, work_highlights, action_items, tops_projects, other_notes) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (user_id, week_end) DO UPDATE SET work_highlights = EXCLUDED.work_highlights, action_items = EXCLUDED.action_items, tops_projects = EXCLUDED.tops_projects, other_notes = EXCLUDED.other_notes', [userId, weekEnd, workHighlights, actionItems, topsProjects, otherNotes])
+      await pool.query(
+        'INSERT INTO reviews (user_id, week_end, work_highlights, action_items, tops_projects, other_notes, tickets_new, tickets_in_progress, tickets_done) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (user_id, week_end) DO UPDATE SET work_highlights = EXCLUDED.work_highlights, action_items = EXCLUDED.action_items, tops_projects = EXCLUDED.tops_projects, other_notes = EXCLUDED.other_notes, tickets_new = EXCLUDED.tickets_new, tickets_in_progress = EXCLUDED.tickets_in_progress, tickets_done = EXCLUDED.tickets_done',
+        [userId, weekEnd, workHighlights, actionItems, topsProjects, otherNotes, ...tickets],
+      )
       response.status(204).end()
     } catch (error) {
       next(error)

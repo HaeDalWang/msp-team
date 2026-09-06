@@ -50,6 +50,9 @@ const state = {
   actionItemsDraft: '- Ticket Assistant Framework 자체 테스트 진행',
   topsProjectsDraft: '- 근거 기반 티켓 응대 에이전트 체계 구축',
   otherNotesDraft: '- 이동의즐거움 코드레포지토리 이관 일정 협의',
+  ticketsNewDraft: '',
+  ticketsInProgressDraft: '',
+  ticketsDoneDraft: '',
   requiredFieldErrors: { workHighlights: false, actionItems: false, topsProjects: false, otherNotes: false },
   toast: '',
   entries: mockEntries,
@@ -290,10 +293,21 @@ function editView() {
     ['topsProjects', '프로젝트/과제 현황(TOPS)', 'TOPS에 연결된 프로젝트·과제의 현재 진척도와 다음 단계를 작성합니다.', state.topsProjectsDraft],
     ['otherNotes', '기타 사항', '고객사 변동, 리스크, 인수인계 등 별도 공유가 필요한 내용을 작성합니다.', state.otherNotesDraft],
   ]
+  const ticketFields = [
+    ['ticketsNew', '신규', state.ticketsNewDraft],
+    ['ticketsInProgress', '진행 중', state.ticketsInProgressDraft],
+    ['ticketsDone', '종료', state.ticketsDoneDraft],
+  ]
   return `<main class="edit-view">
     <div class="edit-toolbar">
       <div><strong>${authState.user?.name ?? ''}</strong><span class="part-badge">${state.entries.find((entry) => entry.name === authState.user?.name)?.part ?? ''}</span>${statusBadge('작성 중')}</div>
       <div><span>자동 저장됨</span><button>지난주 내용 불러오기</button><button class="primary" id="submit-review" aria-label="회고 제출하기">제출하기</button></div>
+    </div>
+    <div class="ticket-count-editor">
+      <span class="ticket-count-editor-label">${icon('Ticket', 15)} 이번 주 티켓 현황 <em>Zendesk 연동 전까지 직접 입력합니다</em></span>
+      <div class="ticket-count-inputs">
+        ${ticketFields.map(([key, label, value]) => `<label>${label}<input type="number" min="0" step="1" inputmode="numeric" data-ticket-field="${key}" aria-label="${label} 티켓 수" value="${escapeAttr(value)}" placeholder="0"></label>`).join('')}
+      </div>
     </div>
     <div class="structured-editor edit-space-first">
       <div class="required-review-grid four-columns">
@@ -401,6 +415,9 @@ function bindEvents(root) {
     state[`${key}Draft`] = event.target.value
     state.requiredFieldErrors[key] = false
   }))
+  root.querySelectorAll('[data-ticket-field]').forEach((el) => el.addEventListener('input', (event) => {
+    state[`${el.dataset.ticketField}Draft`] = event.target.value
+  }))
   if (state.view === 'customers') bindCustomers(root, render)
   if (state.view === 'schedule') bindSchedule(root, render)
   if (state.view === 'comp-leave') bindCompLeave(root, render)
@@ -417,7 +434,11 @@ function bindEvents(root) {
     try {
       const response = await fetch('/api/reviews', {
         method: 'PUT', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ userId: authState.user.userId, weekEnd: state.reviewEnd, workHighlights: state.workHighlightsDraft, actionItems: state.actionItemsDraft, topsProjects: state.topsProjectsDraft, otherNotes: state.otherNotesDraft }),
+        body: JSON.stringify({
+          userId: authState.user.userId, weekEnd: state.reviewEnd,
+          workHighlights: state.workHighlightsDraft, actionItems: state.actionItemsDraft, topsProjects: state.topsProjectsDraft, otherNotes: state.otherNotesDraft,
+          ticketsNew: state.ticketsNewDraft, ticketsInProgress: state.ticketsInProgressDraft, ticketsDone: state.ticketsDoneDraft,
+        }),
       })
       if (!response.ok) throw new Error('save failed')
       reviewCache.delete(state.reviewEnd)
