@@ -66,7 +66,7 @@ export function createApp(pool, env = process.env) {
       // 하므로, customer_assignments가 아니라 users를 기준으로 전체를 조회하고 LEFT JOIN한다.
       const usersResult = await pool.query('SELECT u.id, u.name, p.name AS part FROM users u LEFT JOIN parts p ON p.id = u.part_id ORDER BY p.name NULLS FIRST, u.name')
       const assignmentsResult = await pool.query(
-        `SELECT ca.user_id, c.id AS customer_id, c.name AS customer_name, c.since, c.services, c.note
+        `SELECT ca.user_id, c.id AS customer_id, c.name AS customer_name, c.since, c.tier, c.mcr, c.key_account, c.note
          FROM customer_assignments ca
          JOIN customers c ON c.id = ca.customer_id
          ORDER BY c.name`,
@@ -76,18 +76,23 @@ export function createApp(pool, env = process.env) {
       for (const row of assignmentsResult.rows) {
         const index = ownerIndex.get(row.user_id)
         if (index === undefined) continue
-        owners[index].customers.push({ id: row.customer_id, name: row.customer_name, since: row.since, services: row.services ?? [], note: row.note ?? '' })
+        owners[index].customers.push({ id: row.customer_id, name: row.customer_name, since: row.since, tier: row.tier, mcr: row.mcr, keyAccount: row.key_account, note: row.note ?? '' })
       }
       response.json({ owners })
     } catch (error) {
       next(error)
     }
   })
+  const customerTiers = ['Standard', 'Advanced', 'Enterprise']
   app.post('/api/customers', requireAnySession, async (request, response, next) => {
-    const { name, userId, services, since, note } = request.body
+    const { name, userId, tier, mcr, keyAccount, since, note } = request.body
     if (typeof name !== 'string' || !name.trim() || typeof userId !== 'string' || !userId.trim()) return response.status(400).json({ error: 'name과 userId는 필수입니다.' })
+    if (tier !== undefined && !customerTiers.includes(tier)) return response.status(400).json({ error: `tier는 ${customerTiers.join('/')} 중 하나여야 합니다.` })
     try {
-      const created = await pool.query('INSERT INTO customers (name, since, services, note) VALUES ($1, $2, $3, $4) RETURNING id', [name.trim(), since ?? null, Array.isArray(services) ? services : [], note ?? ''])
+      const created = await pool.query(
+        'INSERT INTO customers (name, since, tier, mcr, key_account, note) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+        [name.trim(), since ?? null, tier ?? 'Standard', Boolean(mcr), Boolean(keyAccount), note ?? ''],
+      )
       const id = created.rows[0].id
       await pool.query('INSERT INTO customer_assignments (customer_id, user_id) VALUES ($1, $2)', [id, userId])
       response.status(201).json({ id })
@@ -97,10 +102,14 @@ export function createApp(pool, env = process.env) {
   })
   // 담당 고객사 수정/삭제도 추가와 동일하게 로그인한 사람 누구나 가능하다(엔지니어끼리 담당을 자주 넘김).
   app.put('/api/customers/:id', requireAnySession, async (request, response, next) => {
-    const { userId, services, note, since } = request.body
+    const { userId, tier, mcr, keyAccount, note, since } = request.body
     if (typeof userId !== 'string' || !userId.trim()) return response.status(400).json({ error: 'userId는 필수입니다.' })
+    if (tier !== undefined && !customerTiers.includes(tier)) return response.status(400).json({ error: `tier는 ${customerTiers.join('/')} 중 하나여야 합니다.` })
     try {
-      await pool.query('UPDATE customers SET services = COALESCE($1, services), note = COALESCE($2, note), since = COALESCE($3, since) WHERE id = $4', [Array.isArray(services) ? services : null, note ?? null, since ?? null, request.params.id])
+      await pool.query(
+        'UPDATE customers SET tier = COALESCE($1, tier), mcr = COALESCE($2, mcr), key_account = COALESCE($3, key_account), note = COALESCE($4, note), since = COALESCE($5, since) WHERE id = $6',
+        [tier ?? null, mcr ?? null, keyAccount ?? null, note ?? null, since ?? null, request.params.id],
+      )
       await pool.query('DELETE FROM customer_assignments WHERE customer_id = $1', [request.params.id])
       await pool.query('INSERT INTO customer_assignments (customer_id, user_id) VALUES ($1, $2)', [request.params.id, userId])
       response.status(204).end()

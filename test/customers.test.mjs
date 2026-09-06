@@ -13,8 +13,8 @@ test('GET /api/customers groups customers under their assigned engineer', async 
       }
       if (sql.includes('FROM customer_assignments')) {
         return { rows: [
-          { user_id: 'kim-beomjung', customer_id: 1, customer_name: '케이비자산운용_DI', since: '2022-06-01', services: ['Advanced Care'], note: '' },
-          { user_id: 'bae-seungdo', customer_id: 2, customer_name: '이동의즐거움', since: '2022-09-01', services: ['MCR', 'Enterprise Care'], note: null },
+          { user_id: 'kim-beomjung', customer_id: 1, customer_name: '케이비자산운용_DI', since: '2022-06-01', tier: 'Advanced', mcr: false, key_account: true, note: '' },
+          { user_id: 'bae-seungdo', customer_id: 2, customer_name: '이동의즐거움', since: '2022-09-01', tier: 'Enterprise', mcr: true, key_account: false, note: null },
         ] }
       }
       return { rows: [] }
@@ -28,10 +28,10 @@ test('GET /api/customers groups customers under their assigned engineer', async 
     assert.equal(response.status, 200)
     assert.deepEqual(body.owners, [
       { userId: 'kim-beomjung', name: '김범중', part: 'Tiger', customers: [
-        { id: 1, name: '케이비자산운용_DI', since: '2022-06-01', services: ['Advanced Care'], note: '' },
+        { id: 1, name: '케이비자산운용_DI', since: '2022-06-01', tier: 'Advanced', mcr: false, keyAccount: true, note: '' },
       ] },
       { userId: 'bae-seungdo', name: '배승도', part: 'Tiger', customers: [
-        { id: 2, name: '이동의즐거움', since: '2022-09-01', services: ['MCR', 'Enterprise Care'], note: '' },
+        { id: 2, name: '이동의즐거움', since: '2022-09-01', tier: 'Enterprise', mcr: true, keyAccount: false, note: '' },
       ] },
     ])
   } finally {
@@ -50,7 +50,7 @@ test('GET /api/customers includes engineers who have no customer assigned yet', 
       }
       if (sql.includes('FROM customer_assignments')) {
         return { rows: [
-          { user_id: 'kim-beomjung', customer_id: 1, customer_name: '케이비자산운용_DI', since: '2022-06-01', services: ['Advanced Care'], note: '' },
+          { user_id: 'kim-beomjung', customer_id: 1, customer_name: '케이비자산운용_DI', since: '2022-06-01', tier: 'Advanced', mcr: false, key_account: false, note: '' },
         ] }
       }
       return { rows: [] }
@@ -68,7 +68,7 @@ test('GET /api/customers includes engineers who have no customer assigned yet', 
   }
 })
 
-test('POST /api/customers creates a customer and assigns it to an engineer', async () => {
+test('POST /api/customers creates a customer with tier/mcr/keyAccount and assigns it to an engineer', async () => {
   const calls = []
   const database = { query: async (sql, values = []) => { calls.push({ sql, values }); return { rows: sql.includes('INSERT INTO customers') ? [{ id: 9 }] : [] } } }
   const server = createApp(database).listen(0)
@@ -76,12 +76,29 @@ test('POST /api/customers creates a customer and assigns it to an engineer', asy
   try {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api/customers`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: '신규고객사', userId: 'bae-seungdo', services: ['Basic'], since: '2026-09-04', note: '' }),
+      body: JSON.stringify({ name: '신규고객사', userId: 'bae-seungdo', tier: 'Enterprise', mcr: true, keyAccount: true, since: '2026-09-04', note: '' }),
     })
     assert.equal(response.status, 201)
     assert.deepEqual(await response.json(), { id: 9 })
-    assert.ok(calls.some((call) => call.sql.includes('INSERT INTO customers')))
+    const insertCall = calls.find((call) => call.sql.includes('INSERT INTO customers'))
+    assert.ok(insertCall)
+    assert.deepEqual(insertCall.values, ['신규고객사', '2026-09-04', 'Enterprise', true, true, ''])
     assert.ok(calls.some((call) => call.sql.includes('INSERT INTO customer_assignments')))
+  } finally {
+    await new Promise((resolve) => server.close(resolve))
+  }
+})
+
+test('POST /api/customers rejects an invalid tier', async () => {
+  const database = { query: async () => ({ rows: [] }) }
+  const server = createApp(database).listen(0)
+  await new Promise((resolve) => server.once('listening', resolve))
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/customers`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '신규고객사', userId: 'bae-seungdo', tier: 'Basic' }),
+    })
+    assert.equal(response.status, 400)
   } finally {
     await new Promise((resolve) => server.close(resolve))
   }

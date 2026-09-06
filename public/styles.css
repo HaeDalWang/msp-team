@@ -250,13 +250,25 @@ button.primary { border-color: transparent; background: var(--accent); color: #2
 .owner-column h2 { margin: 0; font-size: 17px; }
 .owner-column > header > span { color: var(--faint); font-size: 12px; }
 .add-customer { width: calc(100% - 20px); min-height: 34px; display: flex; align-items: center; gap: 6px; margin: 10px; padding: 0 9px; border: 1px dashed var(--line-strong); border-radius: 7px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
+.quick-add-customer { display: flex; flex-direction: column; gap: 8px; margin: 0 10px 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.quick-add-customer input[type="text"], .quick-add-customer > input, .quick-add-customer select { height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 12px; }
+.new-customer-tier { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.new-customer-tier select { flex: 1; }
+.new-customer-checkbox { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+.quick-add-customer > button { align-self: flex-end; }
+.part-filter-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.part-filter-bar button { height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel-2); color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; }
+.part-filter-bar button:hover { border-color: var(--line-strong); color: var(--text); }
+.part-filter-bar button.active { border-color: rgba(246,166,18,.4); color: var(--accent); background: var(--accent-soft); }
 .owner-cards { display: grid; gap: 9px; padding: 0 10px 10px; }
 .managed-customer-card { overflow: hidden; padding: 12px 12px 0; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); }
 .service-row { min-height: 23px; display: flex; flex-wrap: wrap; gap: 5px; }
 .service-badge { display: inline-flex; align-items: center; min-height: 22px; padding: 0 7px; border-radius: 5px; color: #ffcf8b; background: rgba(228, 116, 29, .18); font-size: 10px; font-weight: 800; }
-.service-advanced-care { color: #ff9696; background: rgba(224, 52, 68, .18); }
+.service-standard { color: #9ebeff; background: rgba(100, 162, 255, .16); }
+.service-advanced { color: #ff9696; background: rgba(224, 52, 68, .18); }
+.service-enterprise { color: #ffcf8b; background: rgba(228, 116, 29, .18); }
 .service-mcr { color: #ef9bd3; background: rgba(214, 90, 177, .16); }
-.service-basic { color: #9ebeff; background: rgba(100, 162, 255, .16); }
+.service-key { color: #86e0b0; background: rgba(69, 199, 154, .16); }
 .managed-customer-card h3 { margin: 10px 0 8px; font-size: 14px; line-height: 1.45; }
 .customer-meta { display: flex; align-items: center; gap: 6px; color: var(--faint); font-size: 11px; }
 .managed-customer-card p { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
