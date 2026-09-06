@@ -114,7 +114,7 @@ function render() {
     root.innerHTML = authGate()
     return
   }
-  root.innerHTML = `<div class="app-shell">${topbar()}${weekbar()}${mainView()}${outputOverlay()}${toastEl()}<button class="auth-logout-button" id="auth-logout">${icon('LogOut', 14)} ${authState.user.name}님 로그아웃</button></div>`
+  root.innerHTML = `<div class="app-shell">${topbar()}${weekbar()}${mainView()}${outputOverlay()}${toastEl()}</div>`
   bindEvents(root)
 }
 
@@ -137,6 +137,7 @@ function topbar() {
     <span class="current-user-chip">${icon('User', 15)} ${escapeHtml(authState.user?.name ?? '')}</span>
     <button class="icon-button" id="theme-toggle" aria-label="라이트/다크 테마">${icon(state.light ? 'Moon' : 'Sun', 17)}</button>
     <button class="slack-button" id="slack-share">${icon('Share2', 16)} Slack 공유</button>
+    <button class="icon-button" id="auth-logout" aria-label="로그아웃" title="${escapeAttr(authState.user?.name ?? '')}님 로그아웃">${icon('LogOut', 16)}</button>
   </header>`
 }
 
