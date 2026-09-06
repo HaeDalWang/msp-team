@@ -8,7 +8,10 @@ set -euo pipefail
 : "${SLACK_CLIENT_SECRET:?SLACK_CLIENT_SECRET가 필요합니다.}"
 : "${ALLOWED_SLACK_TEAM_ID:?ALLOWED_SLACK_TEAM_ID가 필요합니다.}"
 [[ "$APP_DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ && "$APP_DOMAIN" == *.* ]] || { echo 'APP_DOMAIN은 도메인이어야 합니다.' >&2; exit 1; }
-[[ "$POSTGRES_PASSWORD" =~ ^[A-Za-z0-9_-]{24,}$ ]] || { echo 'DB 비밀번호는 openssl rand -hex 24로 생성하세요.' >&2; exit 1; }
+# An already-running installation can have a password created by an earlier
+# deployment.  Preserve it during an in-place upgrade; write_env below still
+# rejects values that cannot be represented safely in the generated .env file.
+[[ -n "$POSTGRES_PASSWORD" ]] || { echo 'POSTGRES_PASSWORD는 비어 있을 수 없습니다.' >&2; exit 1; }
 [[ ${#SESSION_SECRET} -ge 32 ]] || { echo 'SESSION_SECRET은 32자 이상이어야 합니다.' >&2; exit 1; }
 app_dir=/opt/msp-weekly-review
 cd "$app_dir"

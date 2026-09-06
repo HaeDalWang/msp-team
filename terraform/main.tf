@@ -53,7 +53,9 @@ resource "aws_route_table_association" "public" {
 
 # HTTPS와 인증서 발급용 HTTP. SSH는 명시한 CIDR에만 개방한다.
 resource "aws_security_group" "app" {
-  name        = "${var.project_name}-app"
+  # Keep a distinct name while transitioning from the legacy group so AWS can
+  # attach this group before Terraform removes the old one.
+  name        = "${var.project_name}-app-https"
   description = "MSP weekly review HTTPS"
   vpc_id      = aws_vpc.this.id
 
@@ -88,6 +90,10 @@ resource "aws_security_group" "app" {
     cidr_blocks = ["0.0.0.0/0"]
   }
   tags = { Name = "${var.project_name}-app-sg" }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 data "aws_ami" "al2023" {
