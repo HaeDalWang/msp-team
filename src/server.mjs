@@ -20,6 +20,7 @@ const scheduleTypes = [
   '오전반차',
   '오후반차',
   '외근',
+  '외근·출장',
   '오전출장',
   '오후출장',
   '종일출장',
@@ -53,6 +54,7 @@ function userFields(body) {
       body.partId === null ? null : v.text(body.partId, '파트', { max: 100 })
   if (has(body, 'role')) fields.role = v.choice(body.role, roles, '역할')
   if (has(body, 'active')) fields.active = v.bool(body.active)
+  if (has(body, 'joinedOn')) fields.joined_on = body.joinedOn === null || body.joinedOn === '' ? null : v.date(body.joinedOn)
   if (has(body, 'slackUserId'))
     fields.slack_user_id = v.text(body.slackUserId, 'Slack 사용자 ID', {
       max: 100,
@@ -174,8 +176,8 @@ export function createApp(pool, env = process.env) {
   app.get('/api/reviews', async (req, res) => {
     const week = v.date(req.query.weekEnd)
     const { rows } = await pool.query(
-      `SELECT u.id,u.name,p.name AS part,u.role,r.id AS review_id,r.work_highlights,r.action_items,r.tops_projects,r.other_notes,r.status,r.tickets_new,r.tickets_in_progress,r.tickets_done,r.version,r.updated_at,r.reviewed_by FROM users u LEFT JOIN parts p ON p.id=u.part_id LEFT JOIN reviews r ON r.user_id=u.id AND r.week_end=$1 WHERE u.active=true OR r.id IS NOT NULL ORDER BY p.name NULLS FIRST,u.name`,
-      [week],
+      `SELECT u.id,u.name,p.name AS part,u.role,r.id AS review_id,r.work_highlights,r.action_items,r.tops_projects,r.other_notes,r.status,r.tickets_new,r.tickets_in_progress,r.tickets_done,r.version,r.updated_at,r.reviewed_by FROM users u LEFT JOIN parts p ON p.id=u.part_id LEFT JOIN reviews r ON r.user_id=u.id AND r.week_end=$1 WHERE (u.active=true OR r.id IS NOT NULL) AND (($3 AND u.id=$2) OR (NOT $3 AND u.part_id IS NOT NULL AND u.role NOT IN ('lead','executive'))) ORDER BY p.sort_order,p.name,u.joined_on NULLS LAST,u.name,u.id`,
+      [week, req.session.userId, req.query.personal === 'true'],
     )
     res.json({
       entries: rows.map((row) => ({
@@ -205,9 +207,10 @@ export function createApp(pool, env = process.env) {
     const week = v.date(b.weekEnd)
     const version = v.integer(b.version, 'version')
     const status = v.choice(b.status, ['draft', 'submitted'], '회고 상태')
-    const values = reviewFields.map((field) =>
-      v.text(b[field] ?? '', field, { required: status === 'submitted' }),
-    )
+    const values = reviewFields.map((field) => {
+      const text = v.text(b[field] ?? '', field, { required: false })
+      return status === 'submitted' && !text.trim() ? '특이사항 없음' : text
+    })
     const tickets = ['ticketsNew', 'ticketsInProgress', 'ticketsDone'].map(
       (field) => v.integer(b[field] === '' ? 0 : (b[field] ?? 0), '티켓 수'),
     )
@@ -430,10 +433,10 @@ export function createApp(pool, env = process.env) {
 
   app.get('/api/organization', async (req, res) => {
     const parts = await pool.query(
-      'SELECT id,name,color FROM parts ORDER BY name',
+      'SELECT id,name,color,sort_order AS "sortOrder" FROM parts ORDER BY sort_order,name',
     )
     const people = await pool.query(
-      'SELECT id,name,part_id,role,version,email,work_start,work_end,slack_user_id,active FROM users ORDER BY name',
+      'SELECT id,name,part_id,role,version,email,work_start,work_end,slack_user_id,active,joined_on FROM users ORDER BY joined_on NULLS LAST,name,id',
     )
     res.json({
       parts: parts.rows,
@@ -449,6 +452,7 @@ export function createApp(pool, env = process.env) {
             workStart: String(u.work_start).slice(0, 5),
             workEnd: String(u.work_end).slice(0, 5),
             active: u.active,
+            joinedOn: u.joined_on,
             ...(req.session.role === 'admin'
               ? { slackUserId: u.slack_user_id }
               : {}),
@@ -467,9 +471,10 @@ export function createApp(pool, env = process.env) {
   })
   app.put('/api/organization/parts/:id', adminOnly, async (req, res) => {
     const name = v.text(req.body.name, '파트 이름', { max: 100 })
-    const result = await pool.query('UPDATE parts SET name=$1 WHERE id=$2', [
+    const result = await pool.query('UPDATE parts SET name=$1,sort_order=COALESCE($3,sort_order) WHERE id=$2', [
       name,
       req.params.id,
+      req.body.sortOrder === undefined ? null : v.integer(req.body.sortOrder, '발표 순서'),
     ])
     if (!result.rowCount) v.fail(404, '파트가 없습니다.')
     res.status(204).end()
@@ -618,6 +623,8 @@ function registerLeaveRoutes(app, pool, leadOnly, selfOnly) {
   app.post('/api/overtime', selfOnly, async (req, res) => {
     const b = req.body
     const hours = v.duration(b.startTime, b.endTime)
+    if (![b.startTime, b.endTime].every((time) => /:(00|30)$/.test(time)))
+      v.fail(400, '시작·종료 시간은 30분 단위로 선택하세요.')
     v.date(b.date)
     v.choice(b.type, ['기술지원', '작업', '장애대응', '점검'], '업무 유형')
     const customer = v.text(b.customer, '고객사', { max: 200 }),
@@ -665,11 +672,11 @@ function registerLeaveRoutes(app, pool, leadOnly, selfOnly) {
       !Number.isFinite(hours) ||
       hours <= 0 ||
       hours > 24 ||
-      Math.abs(hours * 100 - Math.round(hours * 100)) > 0.000001
+      !Number.isInteger(hours * 2)
     )
       v.fail(
         400,
-        '사용 시간은 0보다 크고 24시간 이하로 소수 둘째 자리까지 입력하세요.',
+        '사용 시간은 0.5시간(30분) 단위로, 24시간 이하로 입력하세요.',
       )
     await transaction(pool, async (db) => {
       await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [

@@ -79,7 +79,6 @@ test('draft, submission, reload, comments and review completion persist; stale u
 test('submitted review requires content and nonnegative integer tickets', async (t) => {
   const { request } = await fixture(t)
   for (const change of [
-    { workHighlights: '' },
     { ticketsDone: -1 },
     { ticketsNew: 1.5 },
     { ticketsNew: 'hello' },

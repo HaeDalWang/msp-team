@@ -6,7 +6,7 @@ test('missing reviews have version zero and historical records survive deactivat
   let entries = (
     await (await request('/api/reviews?weekEnd=2026-09-07')).json()
   ).entries
-  assert.equal(entries.length, 4)
+  assert.equal(entries.length, 3)
   assert.ok(
     entries.every(
       (e) => e.status === 'missing' && e.version === 0 && e.reviewId === null,

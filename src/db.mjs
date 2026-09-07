@@ -8,10 +8,12 @@ types.setTypeParser(1082, (value) => value)
 const schema = `
 CREATE TABLE IF NOT EXISTS parts (id text PRIMARY KEY, name text NOT NULL UNIQUE);
 ALTER TABLE parts ADD COLUMN IF NOT EXISTS color text NOT NULL DEFAULT '#5fa8ff';
+ALTER TABLE parts ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS users (id text PRIMARY KEY, name text NOT NULL, part_id text REFERENCES parts(id), role text NOT NULL DEFAULT 'engineer', slack_user_id text UNIQUE, created_at timestamptz NOT NULL DEFAULT now());
 ALTER TABLE users ALTER COLUMN part_id DROP NOT NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS joined_on date;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email text NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS work_start time NOT NULL DEFAULT '09:00';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS work_end time NOT NULL DEFAULT '18:00';

@@ -16,10 +16,7 @@ const types = [
   '휴가',
   '오전반차',
   '오후반차',
-  '외근',
-  '오전출장',
-  '오후출장',
-  '종일출장',
+  '외근·출장',
 ]
 const state = {
   month: today().slice(0, 7),
@@ -78,6 +75,10 @@ export async function loadSchedule() {
     if (month !== state.month) return
     state.members = bootstrap.users
     state.entries = schedule.entries
+    // Preserve existing records on the server; present legacy labels as one option.
+    for (const entries of Object.values(state.entries))
+      for (const entry of Object.values(entries))
+        if (['외근', '오전출장', '오후출장', '종일출장'].includes(entry.type)) entry.type = '외근·출장'
     state.holidays = holidays.holidays.filter((item) =>
       item.date.startsWith(month),
     )

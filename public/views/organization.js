@@ -17,6 +17,7 @@ const state = {
   manager: false,
   newPart: '',
   partNames: {},
+  partOrders: {},
   editing: null,
   draft: {},
 }
@@ -25,12 +26,14 @@ export const organizationDirty = () =>
     state.editing ||
     state.newPart ||
     Object.keys(state.partNames).length ||
+    Object.keys(state.partOrders).length ||
     state.busy,
   )
 export const discardOrganization = () => {
   state.editing = null
   state.newPart = ''
   state.partNames = {}
+  state.partOrders = {}
 }
 export const organizationBusy = () => state.busy
 export async function loadOrganization() {
@@ -51,6 +54,7 @@ function memberForm() {
   return `<section class="part-manager-panel"><h2>${state.editing === 'new' ? '구성원 추가' : '구성원 수정'}</h2><form id="member-form" class="holiday-form">
     <label>이름<input data-member-field="name" required maxlength="100" value="${h(draft.name)}"></label>
     <label>Slack 사용자 ID<input data-member-field="slackUserId" required pattern="[UW][A-Z0-9]+" title="Slack 프로필의 멤버 ID를 입력하세요" value="${h(draft.slackUserId ?? '')}"><small>Slack 프로필 → 더 보기 → 멤버 ID 복사</small></label>
+    <label>입사일<input data-member-field="joinedOn" type="date" value="${h(draft.joinedOn ?? '')}"><small>빠른 입사일 순으로 발표합니다. 미등록자는 뒤에 표시됩니다.</small></label>
     <label>이메일<input data-member-field="email" type="email" value="${h(draft.email ?? '')}"></label>
     <label>파트<select data-member-field="partId"><option value="">무소속</option>${state.parts.map((part) => `<option value="${h(part.id)}" ${part.id === draft.partId ? 'selected' : ''}>${h(part.name)}</option>`).join('')}</select></label>
     <label>역할<select data-member-field="role">${Object.entries(roles)
@@ -65,10 +69,10 @@ function memberForm() {
 }
 export function renderOrganization() {
   const canEdit = isAdmin()
-  return `<main class="management-page organization-management"><div class="management-heading"><div><span class="eyebrow">ORGANIZATION ADMIN</span><h1>조직 및 권한 관리</h1><p>파트, 역할과 출퇴근 시간을 관리합니다.</p></div><div class="heading-actions">${canEdit ? `<button id="part-manager-toggle">파트 관리</button><button id="member-add" class="primary" ${state.busy ? 'disabled' : ''}>구성원 추가</button>` : ''}</div></div>
+  return `<main class="management-page organization-management"><div class="management-heading"><div><span class="eyebrow">ORGANIZATION ADMIN</span><h1>조직 및 권한 관리</h1><p>파트 발표 순서, 입사일, 역할과 출퇴근 시간을 관리합니다.</p></div><div class="heading-actions">${canEdit ? `<button id="part-manager-toggle">파트 관리</button><button id="member-add" class="primary" ${state.busy ? 'disabled' : ''}>구성원 추가</button>` : ''}</div></div>
     ${state.error ? `<div class="comp-api-error" role="alert">${h(state.error)} <button id="organization-retry">다시 조회</button></div>` : ''}
     <div class="permission-banner">${icon('ShieldCheck', 20)}<div><strong>팀 구성원 열람</strong><span>수정: 관리자</span></div><em>현재 ${h(roles[session.user?.role] ?? '알 수 없음')}</em></div>
-    ${canEdit && state.manager ? `<section class="part-manager-panel"><h2>파트 관리</h2><p>소속 구성원이 없는 파트만 삭제할 수 있습니다.</p><div class="part-manager-list">${state.parts.map((part) => `<form data-part-form="${h(part.id)}"><label>파트 이름<input data-part-name="${h(part.id)}" required maxlength="100" value="${h(state.partNames[part.id] ?? part.name)}"></label><button ${state.busy ? 'disabled' : ''}>이름 저장</button><button type="button" data-delete-part="${h(part.id)}" ${state.busy || state.members.some((member) => member.partId === part.id) ? 'disabled' : ''}>삭제</button></form>`).join('')}<form id="part-add-form"><label>새 파트<input id="new-part-name" required maxlength="100" value="${h(state.newPart)}"></label><button ${state.busy ? 'disabled' : ''}>추가</button></form></div></section>` : ''}
+    ${canEdit && state.manager ? `<section class="part-manager-panel"><h2>파트 관리</h2><p>소속 구성원이 없는 파트만 삭제할 수 있습니다.</p><div class="part-manager-list">${state.parts.map((part) => `<form data-part-form="${h(part.id)}"><label>파트 이름<input data-part-name="${h(part.id)}" required maxlength="100" value="${h(state.partNames[part.id] ?? part.name)}"></label><label>발표 순서<input data-part-order="${h(part.id)}" type="number" min="0" step="1" value="${h(state.partOrders[part.id] ?? part.sortOrder ?? 0)}"></label><button ${state.busy ? 'disabled' : ''}>저장</button><button type="button" data-delete-part="${h(part.id)}" ${state.busy || state.members.some((member) => member.partId === part.id) ? 'disabled' : ''}>삭제</button></form>`).join('')}<form id="part-add-form"><label>새 파트<input id="new-part-name" required maxlength="100" value="${h(state.newPart)}"></label><button ${state.busy ? 'disabled' : ''}>추가</button></form></div></section>` : ''}
     ${canEdit && state.editing ? memberForm() : ''}
     <div class="org-summary"><div><span>활성 구성원<strong>${state.members.filter((member) => member.active !== false).length}명</strong></span></div><div><span>파트<strong>${state.parts.length}개</strong></span></div><div><span>관리자<strong>${state.members.filter((member) => member.role === 'admin' && member.active !== false).length}명</strong></span></div></div>
     <div class="org-columns">${[{ id: null, name: '무소속' }, ...state.parts]
@@ -76,7 +80,7 @@ export function renderOrganization() {
         const members = state.members.filter(
           (member) => (member.partId ?? null) === part.id,
         )
-        return `<section class="org-column"><header><h2>${h(part.name)}</h2><span>${members.length}명</span></header><div class="member-list">${members.map((member) => `<article class="member-card"><div class="member-avatar">${h(member.name.slice(-1))}</div><div class="member-info"><div><h3>${h(member.name)}</h3><span>${h(roles[member.role] ?? member.role)}${member.active === false ? ' · 비활성' : ''}</span></div><p>${h(member.email || '이메일 미등록')}</p><small>${h(member.workStart ?? '')}–${h(member.workEnd ?? '')}</small></div>${canEdit ? `<button data-edit-member="${h(member.userId)}" ${state.busy ? 'disabled' : ''}>수정</button>` : ''}</article>`).join('') || '<p>구성원이 없습니다.</p>'}</div></section>`
+        return `<section class="org-column"><header><h2>${h(part.name)}</h2><span>${members.length}명</span></header><div class="member-list">${members.map((member) => `<article class="member-card"><div class="member-avatar">${h(member.name.slice(-1))}</div><div class="member-info"><div><h3>${h(member.name)}</h3><span>${h(roles[member.role] ?? member.role)}${member.active === false ? ' · 비활성' : ''}</span></div><p>${h(member.email || '이메일 미등록')}</p><small>입사일 ${h(member.joinedOn || '미등록')} · ${h(member.workStart ?? '')}–${h(member.workEnd ?? '')}</small></div>${canEdit ? `<button data-edit-member="${h(member.userId)}" ${state.busy ? 'disabled' : ''}>수정</button>` : ''}</article>`).join('') || '<p>구성원이 없습니다.</p>'}</div></section>`
       })
       .join('')}</div></main>`
 }
@@ -167,6 +171,9 @@ export function bindOrganization(root, rerender) {
       state.editing = null
     })
   })
+  root.querySelectorAll('[data-part-order]').forEach((input) => input.addEventListener('input', (event) => {
+    state.partOrders[input.dataset.partOrder] = event.target.value
+  }))
   root.querySelectorAll('[data-part-name]').forEach((input) =>
     input.addEventListener('input', (event) => {
       state.partNames[input.dataset.partName] = event.target.value
@@ -181,9 +188,10 @@ export function bindOrganization(root, rerender) {
       run(async () => {
         await api(`/api/organization/parts/${encodeURIComponent(id)}`, {
           method: 'PUT',
-          body: JSON.stringify({ name: name.trim() }),
+          body: JSON.stringify({ name: name.trim(), sortOrder: Number(state.partOrders[id] ?? state.parts.find((part) => part.id === id)?.sortOrder ?? 0) }),
         })
         delete state.partNames[id]
+        delete state.partOrders[id]
       })
     }),
   )

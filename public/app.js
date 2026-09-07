@@ -101,7 +101,9 @@ const state = {
   selectedName: null,
   dateOpen: false,
   settingsOpen: false,
-  fontScale: Number(localStorage.getItem('msp-font-scale')) || 100,
+  fontScale: Math.min(130, Math.max(85, Number(localStorage.getItem('msp-font-scale')) || 110)),
+  reviewMode: 'single',
+  editorMode: localStorage.getItem('msp-editor-mode') === 'list' ? 'list' : 'grid',
   light: false,
   query: '',
   leftOpen: true,
@@ -157,8 +159,8 @@ const dbStatusToLabel = {
   recheck: '재검토 필요',
 }
 
-async function loadReviewEntries(weekEnd) {
-  const body = await api(`/api/reviews?weekEnd=${encodeURIComponent(weekEnd)}`)
+async function loadReviewEntries(weekEnd, personal = false) {
+  const body = await api(`/api/reviews?weekEnd=${encodeURIComponent(weekEnd)}${personal ? '&personal=true' : ''}`)
   const entries = body.entries.map((entry) => ({
     ...entry,
     raw: entry,
@@ -193,15 +195,16 @@ async function ensureReviewEntries() {
   state.commentList = []
   render()
   try {
-    const entries = await loadReviewEntries(week)
+    const [entries, personal] = await Promise.all([loadReviewEntries(week), loadReviewEntries(week, true)])
     if (generation !== loadGeneration) return
     state.entries = entries
+    state.personalEntry = personal[0]
     state.entriesLoaded = true
     if (
       !state.selectedName ||
       !entries.some((entry) => entry.id === state.selectedName)
     )
-      state.selectedName = authState.user?.userId ?? entries[0]?.id ?? null
+      state.selectedName = entries.find((entry) => entry.id === authState.user?.userId)?.id ?? entries[0]?.id ?? null
     if (!state.dirty) hydrateDraft()
     render()
     await loadComments()
@@ -223,7 +226,7 @@ const reviewFields = [
 ]
 const ticketFields = ['ticketsNew', 'ticketsInProgress', 'ticketsDone']
 function hydrateDraft(
-  entry = state.entries.find((item) => item.id === authState.user?.userId),
+  entry = state.personalEntry,
 ) {
   for (const field of reviewFields)
     state[`${field}Draft`] =
@@ -291,6 +294,11 @@ function render() {
   )
   document.documentElement.dataset.theme = state.light ? 'light' : 'dark'
   const root = document.querySelector('#root')
+  const scrollSelectors = ['.management-page', '.owner-board', '.review-scroll', '.people-rail', '.review-panel', '.structured-editor', '.all-reviews', '.schedule-table-wrap', '.engineer-overview-table', ...reviewFields.map((field) => `textarea[data-field="${field}"]`), '#comment-draft', '#schedule-note']
+  scrollSelectors.push('.comp-table-wrap')
+  const scrollPositions = scrollSelectors.flatMap((selector) =>
+    [...root.querySelectorAll(selector)].map((element, index) => [selector, index, element.scrollLeft, element.scrollTop]),
+  )
   const focused = document.activeElement
   const focusKey = focused?.id
     ? `#${CSS.escape(focused.id)}`
@@ -316,6 +324,10 @@ function render() {
   }
   root.innerHTML = `<div class="app-shell">${topbar()}${weekbar()}${state.error ? `<div role="alert">${escapeHtml(state.error)} <button id="retry-reviews">다시 불러오기</button></div>` : ''}${mainView()}${outputOverlay()}${toastEl()}</div>`
   bindEvents(root)
+  for (const [selector, index, left, top] of scrollPositions) {
+    const element = root.querySelectorAll(selector)[index]
+    if (element) element.scrollTo(left, top)
+  }
   if (focusKey) {
     const target = root.querySelector(focusKey)
     if (target && !target.disabled) {
@@ -395,7 +407,7 @@ function weekbar() {
     <button class="week-move" id="week-next" aria-label="다음 주"><span>다음 주</span> ${icon('ChevronRight', 18)}</button>
     <button class="today-button" id="week-today" ${state.reviewEnd === currentEnd ? 'disabled' : ''}>${icon('RotateCcw', 15)} 이번 주</button>
     <div class="week-spacer"></div>
-    ${state.view === 'review' ? `<button class="output-button" id="output-open" aria-label="월간 Output">${icon('FileText', 15)} 월간 Output</button>` : ''}
+    ${state.view === 'review' ? `<div class="view-switch"><button data-review-mode="single" aria-pressed="${state.reviewMode === 'single'}">한 명씩 보기</button><button data-review-mode="all" aria-pressed="${state.reviewMode === 'all'}">전체 회고 보기</button></div><button class="output-button" id="output-open" aria-label="월간 Output">${icon('FileText', 15)} 월간 Output</button>` : ''}
   </section>`
 }
 
@@ -429,6 +441,7 @@ function mainView() {
 }
 
 function reviewView() {
+  if (state.reviewMode === 'all') return `<main class="all-reviews">${filteredEntries().map((entry) => `<article class="all-review-card"><header><h1>${escapeHtml(entry.name)}</h1><span class="part-badge">${escapeHtml(entry.part)}</span>${statusBadge(entry.status)}<button data-open-review="${escapeAttr(entry.id)}">상세·코멘트</button></header><p class="all-ticket-summary">신규 ${entry.tickets[0]} · 진행 중 ${entry.tickets[1]} · 종료 ${entry.tickets[2]}</p>${reviewFields.map((field, index) => `<section><h2>${['주요 업무 현황', '주요 계획 / Action Item', '프로젝트/과제 현황(TOPS)', '기타 사항'][index]}</h2><p>${escapeHtml(entry.raw?.[field] || '작성된 내용 없음')}</p></section>`).join('')}</article>`).join('') || '<p>표시할 회고가 없습니다.</p>'}</main>`
   const selected = selectedEntry() ??
     state.entries[0] ?? {
       name: '회고 없음',
@@ -630,7 +643,7 @@ function editView() {
   ]
   return `<main class="edit-view">
     <div class="edit-toolbar">
-      <div><strong>${escapeHtml(authState.user?.name)}</strong><span class="part-badge">${escapeHtml(state.entries.find((entry) => entry.id === authState.user?.userId)?.part)}</span>${statusBadge(state.entries.find((entry) => entry.id === authState.user?.userId)?.status ?? '미작성')}</div>
+      <div><strong>${escapeHtml(authState.user?.name)}</strong><span class="part-badge">${escapeHtml(state.personalEntry?.part)}</span>${statusBadge(state.personalEntry?.status ?? '미작성')}</div>
       <div><span id="save-state">${state.saving ? '저장 중…' : state.dirty ? '저장하지 않은 변경 사항' : '변경 후 저장해 주세요'}</span><button id="load-previous" ${state.saving ? 'disabled' : ''}>지난주 내용 불러오기</button><button id="save-draft" ${state.saving ? 'disabled' : ''}>임시 저장</button><button class="primary" id="submit-review" ${state.saving ? 'disabled' : ''} aria-label="회고 제출하기">제출하기</button></div>
     </div>
     <div class="ticket-count-editor">
@@ -639,7 +652,8 @@ function editView() {
         ${ticketFields.map(([key, label, value]) => `<label>${label}<input ${state.saving ? 'disabled' : ''} type="number" min="0" step="1" inputmode="numeric" data-ticket-field="${key}" aria-label="${label} 티켓 수" value="${escapeAttr(value)}" placeholder="0"></label>`).join('')}
       </div>
     </div>
-    <div class="structured-editor edit-space-first">
+    <div class="editor-options view-switch"><button data-editor-mode="grid" aria-pressed="${state.editorMode === 'grid'}">나란히 쓰기</button><button data-editor-mode="list" aria-pressed="${state.editorMode === 'list'}">세로로 쓰기</button><span>빈 항목은 제출 시 ‘특이사항 없음’으로 저장됩니다.</span></div>
+    <div class="structured-editor edit-space-first editor-${state.editorMode}">
       <div class="required-review-grid four-columns">
         ${fields
           .map(
@@ -649,7 +663,7 @@ function editView() {
               desc,
               value,
             ]) => `<label class="${state.requiredFieldErrors[key] ? 'review-field invalid' : 'review-field'}">
-          <span><strong>${label}</strong><em>필수</em></span>
+          <span><strong>${label}</strong><button type="button" data-clear-field="${key}" ${state.saving ? 'disabled' : ''}>비우기</button></span>
           <small>${desc}</small>
           <textarea ${state.saving ? 'disabled' : ''} data-field="${key}" aria-label="${label}">${escapeHtml(value)}</textarea>
           ${state.requiredFieldErrors[key] ? '<b>필수 항목을 입력해 주세요.</b>' : ''}
@@ -767,6 +781,31 @@ document.addEventListener('click', () => {
 })
 
 function bindEvents(root) {
+  root.querySelectorAll('[data-review-mode]').forEach((button) => button.addEventListener('click', () => {
+    state.reviewMode = button.dataset.reviewMode
+    render()
+  }))
+  root.querySelectorAll('[data-open-review]').forEach((button) => button.addEventListener('click', () => {
+    state.reviewMode = 'single'
+    state.selectedName = button.dataset.openReview
+    state.commentDraft = ''
+    loadComments()
+    render()
+  }))
+  root.querySelectorAll('[data-editor-mode]').forEach((button) => button.addEventListener('click', () => {
+    state.editorMode = button.dataset.editorMode
+    localStorage.setItem('msp-editor-mode', state.editorMode)
+    render()
+  }))
+  root.querySelectorAll('[data-clear-field]').forEach((button) => button.addEventListener('click', (event) => {
+    event.preventDefault()
+    if (state.saving) return
+    const field = button.dataset.clearField
+    if (state[`${field}Draft`] && !confirm('이 항목의 내용을 비울까요? 저장 전까지 서버에는 반영되지 않습니다.')) return
+    state[`${field}Draft`] = ''
+    state.dirty = true
+    render()
+  }))
   root.querySelector('#retry-reviews')?.addEventListener('click', () => {
     if (confirmDiscard()) {
       state.dirty = false
@@ -872,7 +911,8 @@ function bindEvents(root) {
     ?.addEventListener('input', (event) => {
       state.fontScale = Number(event.target.value)
       localStorage.setItem('msp-font-scale', String(state.fontScale))
-      render()
+      document.documentElement.style.setProperty('--font-scale', state.fontScale / 100)
+      root.querySelector('.settings-font-scale em').textContent = `${state.fontScale}%`
     })
   root.querySelector('#left-close')?.addEventListener('click', () => {
     state.leftOpen = false
@@ -983,7 +1023,7 @@ function bindEvents(root) {
       [...reviewFields, ...ticketFields].map((field) => state[`${field}Draft`]),
     )
     try {
-      const entries = await loadReviewEntries(moveReviewWeek(week, -1))
+      const entries = await loadReviewEntries(moveReviewWeek(week, -1), true)
       if (week !== state.reviewEnd) return
       if (
         draftBefore !==
@@ -1017,17 +1057,7 @@ function bindEvents(root) {
 
 async function saveReview(status) {
   if (state.saving || !state.entriesLoaded) return
-  const nextErrors = {
-    workHighlights: !state.workHighlightsDraft.trim(),
-    actionItems: !state.actionItemsDraft.trim(),
-    topsProjects: !state.topsProjectsDraft.trim(),
-    otherNotes: !state.otherNotesDraft.trim(),
-  }
-  state.requiredFieldErrors = nextErrors
-  if (status === 'submitted' && Object.values(nextErrors).some(Boolean)) {
-    render()
-    return
-  }
+  state.requiredFieldErrors = {}
   const tickets = ticketFields.map((field) =>
     Number(state[`${field}Draft`] || 0),
   )
