@@ -27,7 +27,9 @@ function seoulDate(value) {
 }
 
 export function getReviewPeriod(reviewEnd) {
-  return { start: addDays(reviewEnd, -6), end: reviewEnd }
+  // The review key is the Monday on which the team starts the week. The
+  // following Monday is deliberately included as the hand-off point.
+  return { start: reviewEnd, end: addDays(reviewEnd, 7) }
 }
 
 export function getCurrentReviewEnd(now = new Date()) {

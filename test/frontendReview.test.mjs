@@ -6,6 +6,8 @@ import {
   weeksInMonth,
   buildMonthlyTeamOutput,
 } from '../public/monthlyOutput.js'
+import { formatReviewRange, getReviewPeriod } from '../public/dateRange.js'
+import { koreanPublicHolidays } from '../public/koreanHolidays.js'
 
 test('API failures preserve server error and distinguish successful empty responses', async (t) => {
   t.mock.method(
@@ -43,6 +45,21 @@ test('month selection includes real Mondays across leap years and five-week mont
     '2024-02-26',
   ])
   assert.equal(weeksInMonth('2026-08-31').length, 5)
+})
+
+test('a review period starts on its Monday and includes the following Monday', () => {
+  assert.deepEqual(getReviewPeriod('2026-09-07'), {
+    start: '2026-09-07',
+    end: '2026-09-14',
+  })
+  assert.equal(formatReviewRange('2026-09-07'), '9월 7일(월) ~ 9월 14일(월)')
+})
+
+test('Korean public holidays include lunar and substitute dates without a network request', () => {
+  const holidays = koreanPublicHolidays(2026)
+  assert.equal(holidays.get('2026-02-17'), '설날')
+  assert.equal(holidays.get('2026-05-25'), '부처님오신날 대체공휴일')
+  assert.equal(holidays.get('2026-09-25'), '추석')
 })
 
 test('monthly output accepts live API text fields without dropping work or splitting characters', () => {

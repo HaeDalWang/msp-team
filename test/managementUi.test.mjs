@@ -8,6 +8,7 @@ import {
 } from '../public/views/customers.js'
 import {
   daysInMonth,
+  isWeekend,
   loadSchedule,
   renderSchedule,
   bindSchedule,
@@ -56,6 +57,7 @@ test('schedule generates real month lengths including leap years and year bounda
   assert.equal(daysInMonth('2025-02').length, 28)
   assert.equal(daysInMonth('2026-12').at(-1).date, '2026-12-31')
   assert.equal(daysInMonth('2027-01')[0].weekday, '금')
+  assert.ok(isWeekend(daysInMonth('2026-09')[5]))
 })
 
 test('all management views use escaped live data and dynamically include new parts', async (t) => {

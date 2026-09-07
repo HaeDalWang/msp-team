@@ -2,6 +2,7 @@ import { icon } from '../icons.js'
 import { isAdminOrLead, isSelfOrAdminOrLead } from '../session.js'
 import { api } from '../api.js'
 import { escapeHtml as h } from '../html.js'
+import { koreanPublicHolidays } from '../koreanHolidays.js'
 
 const today = () =>
   new Intl.DateTimeFormat('en-CA', {
@@ -65,6 +66,7 @@ export function daysInMonth(month) {
     }),
   )
 }
+export const isWeekend = (day) => ['토', '일'].includes(day.weekday)
 export async function loadSchedule() {
   try {
     const month = state.month
@@ -86,20 +88,31 @@ export async function loadSchedule() {
 }
 export function renderSchedule() {
   const days = daysInMonth(state.month)
+  const officialHolidays = koreanPublicHolidays(Number(state.month.slice(0, 4)))
+  const manualHolidays = new Map(state.holidays.map((item) => [item.date, item.name]))
+  const dayClasses = (day, element) => [
+    isWeekend(day) ? (element === 'header' ? 'weekend' : 'weekend-column') : '',
+    officialHolidays.has(day.date)
+      ? (element === 'header' ? 'official-holiday' : 'official-holiday-column')
+      : '',
+    manualHolidays.has(day.date)
+      ? (element === 'header' ? 'manual-holiday' : 'manual-holiday-column')
+      : '',
+  ].filter(Boolean).join(' ')
   const selected = state.selected
   const editable = selected && isSelfOrAdminOrLead(selected.userId)
-  return `<main class="management-page schedule-management"><div class="management-heading"><div><span class="eyebrow">TEAM SCHEDULE</span><h1>팀 일정 관리</h1><p>날짜를 선택해 일정을 확인하고 저장합니다. 공휴일과 회사 휴일은 관리자가 직접 등록합니다.</p></div>${isAdminOrLead() ? '<button id="holiday-manager-toggle">휴일 관리</button>' : ''}</div>
+  return `<main class="management-page schedule-management"><div class="management-heading"><div><span class="eyebrow">TEAM SCHEDULE</span><h1>팀 일정 관리</h1><p>토·일과 한국 공휴일은 빨간색으로 표시됩니다. 회사 휴일은 관리자가 직접 추가할 수 있습니다.</p></div>${isAdminOrLead() ? '<button id="holiday-manager-toggle">휴일 관리</button>' : ''}</div>
     ${state.error ? `<div role="alert" class="comp-api-error">${h(state.error)} <button id="schedule-retry">다시 조회</button></div>` : ''}
     <div class="schedule-toolbar"><div class="month-picker"><button id="previous-month" ${state.busy ? 'disabled' : ''} aria-label="이전 달">${icon('ChevronLeft', 17)}</button><strong>${h(state.month)}</strong><button id="next-month" ${state.busy ? 'disabled' : ''} aria-label="다음 달">${icon('ChevronRight', 17)}</button><button id="current-month" ${state.busy ? 'disabled' : ''}>오늘</button></div></div>
     ${state.manager && isAdminOrLead() ? `<section class="holiday-manager-panel"><h2>휴일 관리</h2><form id="holiday-form" class="holiday-form"><label>날짜<input id="holiday-date" type="date" required value="${h(state.holidayDate)}"></label><label>이름<input id="holiday-name" required maxlength="100" value="${h(state.holidayName)}"></label><button class="primary" ${state.busy ? 'disabled' : ''}>휴일 추가</button></form><div class="holiday-list">${state.holidays.map((item) => `<span>${h(item.date)} · ${h(item.name)} <button data-remove-holiday="${h(item.date)}" ${state.busy ? 'disabled' : ''} aria-label="${h(item.name)} 삭제">×</button></span>`).join('') || '<p>등록된 휴일이 없습니다.</p>'}</div></section>` : ''}
-    <div class="schedule-layout"><div class="schedule-table-wrap"><table class="schedule-table"><thead><tr><th>파트</th><th>이름</th><th>시차 출근</th>${days.map((day) => `<th class="${['토', '일'].includes(day.weekday) ? 'weekend' : ''}"><strong>${day.number}</strong><span>${day.weekday}</span><em>${h(state.holidays.find((item) => item.date === day.date)?.name ?? '')}</em></th>`).join('')}</tr></thead><tbody>${state.members
+    <div class="schedule-layout"><div class="schedule-table-wrap"><table class="schedule-table"><thead><tr><th>파트</th><th>이름</th><th>시차 출근</th>${days.map((day) => `<th class="${dayClasses(day, 'header')}"><strong>${day.number}</strong><span>${day.weekday}</span><em>${h(officialHolidays.get(day.date) ?? manualHolidays.get(day.date) ?? '')}</em></th>`).join('')}</tr></thead><tbody>${state.members
       .map(
         (member) =>
           `<tr><th>${h(member.part ?? '무소속')}</th><th>${h(member.name)}</th><td>${h(member.workStart ?? '')}–${h(member.workEnd ?? '')}</td>${days
             .map((day) => {
               const entry = state.entries[member.id]?.[day.date]
               const type = types.includes(entry?.type) ? entry.type : ''
-              return `<td><button class="schedule-cell schedule-${type || 'empty'}" data-user="${h(member.id)}" data-date="${day.date}" ${state.busy ? 'disabled' : ''}>${h(type || '—')}</button></td>`
+              return `<td class="${dayClasses(day, 'cell')}"><button class="schedule-cell schedule-${type || 'empty'}" data-user="${h(member.id)}" data-date="${day.date}" ${state.busy ? 'disabled' : ''}>${h(type || '—')}</button></td>`
             })
             .join('')}</tr>`,
       )
