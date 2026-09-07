@@ -102,6 +102,7 @@ const state = {
   dateOpen: false,
   settingsOpen: false,
   profile: null,
+  profileSaved: '',
   profileBusy: false,
   profileMessage: '',
   fontScale: Math.min(130, Math.max(85, Number(localStorage.getItem('msp-font-scale')) || 110)),
@@ -773,7 +774,7 @@ async function switchView(view) {
 }
 
 window.addEventListener('beforeunload', (event) => {
-  if (state.dirty || state.saving || managementDrafts[state.view]?.[0]()) {
+  if (state.dirty || state.saving || state.profileBusy || (state.profile && JSON.stringify(state.profile) !== state.profileSaved) || managementDrafts[state.view]?.[0]()) {
     event.preventDefault()
     event.returnValue = ''
   }
@@ -797,7 +798,10 @@ function bindEvents(root) {
     state.profileBusy = true
     state.profileMessage = ''
     render()
-    try { state.profile = await api('/api/profile') }
+    try {
+      state.profile = await api('/api/profile')
+      state.profileSaved = JSON.stringify(state.profile)
+    }
     catch (error) { state.profileMessage = error.message }
     finally { state.profileBusy = false; render() }
   })
@@ -811,6 +815,7 @@ function bindEvents(root) {
     render()
     try {
       state.profile = await api('/api/profile', { method: 'PUT', body: JSON.stringify(state.profile) })
+      state.profileSaved = JSON.stringify(state.profile)
       state.profileMessage = '내 정보를 저장했습니다.'
       if (['review', 'dashboard', 'edit'].includes(state.view)) await ensureReviewEntries()
       if (state.view === 'organization') await loadOrganization()
