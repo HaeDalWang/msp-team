@@ -2,6 +2,21 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { fixture, review, overtime } from './fixtures.mjs'
 
+test('leave requests reject insufficient balance and reserve pending requests atomically', async (t) => {
+  const { request } = await fixture(t)
+  const submit = (date, hours) => request('/api/leave', { method: 'POST', body: { date, hours, reason: '개인 일정' } })
+  await request('/api/overtime', { method: 'POST', body: overtime({ startTime: '22:00', endTime: '00:30' }) })
+  const record = (await (await request('/api/overtime?userId=user')).json()).records[0]
+  await request(`/api/overtime/${record.id}/approve`, { user: 'lead', method: 'POST' })
+  assert.equal((await submit('2026-09-10', 3.5)).status, 400)
+  assert.equal((await submit('2026-09-10', 4)).status, 409)
+  await request('/api/overtime', { method: 'POST', body: overtime({ date: '2026-09-08', startTime: '20:00', endTime: '21:30' }) })
+  const extra = (await (await request('/api/overtime?userId=user')).json()).records.find((r) => r.status === 'pending')
+  await request(`/api/overtime/${extra.id}/approve`, { user: 'lead', method: 'POST' })
+  const results = await Promise.all([submit('2026-09-10', 4), submit('2026-09-11', 4)])
+  assert.deepEqual(results.map((r) => r.status).sort(), [201, 409])
+})
+
 test('review-day absence follows the selected Monday and approved leave only', async (t) => {
   const { request, pool } = await fixture(t)
   await request('/api/schedule', { method: 'PUT', body: { userId: 'user', date: '2026-09-07', type: '휴가' } })
@@ -49,5 +64,5 @@ test('new overtime and leave requests require half-hour increments', async (t) =
   assert.equal((await request('/api/overtime', { method: 'POST', body: overtime({ startTime: '22:01' }) })).status, 400)
   assert.equal((await request('/api/overtime', { method: 'POST', body: overtime({ startTime: '22:30' }) })).status, 201)
   assert.equal((await request('/api/leave', { method: 'POST', body: { date: '2026-09-10', hours: 0.1, reason: '개인 일정' } })).status, 400)
-  assert.equal((await request('/api/leave', { method: 'POST', body: { date: '2026-09-10', hours: 0.5, reason: '개인 일정' } })).status, 201)
+  assert.equal((await request('/api/leave', { method: 'POST', body: { date: '2026-09-10', hours: 0.5, reason: '개인 일정' } })).status, 400)
 })

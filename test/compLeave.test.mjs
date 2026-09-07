@@ -78,7 +78,7 @@ test('overtime hours are calculated on server and duplicate submissions rejected
   )
 })
 test('concurrent leave approvals cannot spend the same accrued balance twice', async (t) => {
-  const { request } = await fixture(t)
+  const { request, pool } = await fixture(t)
   await request('/api/overtime', { method: 'POST', body: overtime() })
   const id = (await (await request('/api/overtime?userId=user')).json())
     .records[0].id
@@ -87,15 +87,8 @@ test('concurrent leave approvals cannot spend the same accrued balance twice', a
     method: 'POST',
   })
   for (const date of ['2026-09-08', '2026-09-09'])
-    assert.equal(
-      (
-        await request('/api/leave', {
-          method: 'POST',
-          body: { date, hours: 3, reason: '휴가' },
-        })
-      ).status,
-      201,
-    )
+    // Legacy pending requests must still be checked at approval time.
+    await pool.query("INSERT INTO leave_requests(user_id,leave_date,hours,reason) VALUES('user',$1,3,'휴가')", [date])
   const leaves = (await (await request('/api/overtime?userId=user')).json())
     .leaves
   const results = await Promise.all(

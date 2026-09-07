@@ -672,14 +672,11 @@ function registerLeaveRoutes(app, pool, leadOnly, selfOnly) {
     const b = req.body
     const hours = Number(b.hours)
     if (
-      !Number.isFinite(hours) ||
-      hours <= 0 ||
-      hours > 24 ||
-      !Number.isInteger(hours * 2)
+      ![4, 8].includes(hours)
     )
       v.fail(
         400,
-        '사용 시간은 0.5시간(30분) 단위로, 24시간 이하로 입력하세요.',
+        '대체휴가는 4시간 또는 8시간으로 신청하세요.',
       )
     await transaction(pool, async (db) => {
       await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [
@@ -691,6 +688,10 @@ function registerLeaveRoutes(app, pool, leadOnly, selfOnly) {
       )
       if (duplicate.rowCount)
         v.fail(409, '해당 날짜의 사용 신청이 이미 있습니다.')
+      const balance = await db.query(summarySql + ' WHERE u.id=$1', [req.session.userId])
+      const account = totals(balance.rows[0])
+      if (hours > account.balanceHours - account.pendingLeaveHours)
+        v.fail(409, '신청 가능한 잔여 시간이 부족합니다. 승인 대기 중인 사용 신청도 포함하여 확인하세요.')
       await db.query(
         'INSERT INTO leave_requests(user_id,leave_date,hours,reason) VALUES($1,$2,$3,$4)',
         [req.session.userId, b.date, hours, v.text(b.reason, '사용 사유')],

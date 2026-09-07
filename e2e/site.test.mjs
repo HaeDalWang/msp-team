@@ -172,6 +172,12 @@ test('browser customer edit, transfer, dynamic part and schedule note persistenc
   await page.locator('[data-add-customer="admin"]').click()
   await page.locator('[data-draft="name"]').fill('브라우저 고객사')
   await page.locator('[data-draft="note"]').fill('메모 내용')
+  assert.ok(await page.locator('.checkbox-field').first().evaluate((label) => {
+    const input = label.querySelector('input').getBoundingClientRect()
+    const bounds = label.getBoundingClientRect()
+    return input.width <= 20 && Math.abs(input.y + input.height / 2 - bounds.y - bounds.height / 2) < 3
+  }))
+  await page.screenshot({ path: '/tmp/msp-customer-controls.png' })
   await page.locator('#customer-form button.primary').click()
   await expect(page.locator('.managed-customer-card')).toContainText(
     '브라우저 고객사',
@@ -230,6 +236,12 @@ test('browser customer edit, transfer, dynamic part and schedule note persistenc
 test('browser overtime and leave balances reflect approval', async (t) => {
   const { page, base, request, context, token } = await browserFixture(t)
   await page.goto(base + '/#comp-leave')
+  assert.ok(await page.locator('.compact-time').evaluate((element) => {
+    const parent = element.getBoundingClientRect()
+    const estimate = element.querySelector('.calculated-hours').getBoundingClientRect()
+    return estimate.right <= parent.right + 1 && estimate.left >= parent.left - 1
+  }))
+  await page.screenshot({ path: '/tmp/msp-overtime-controls.png' })
   for (const [field, value] of Object.entries(overtime())) {
     const input = page.locator(`[data-overtime="${field}"]`)
     if (['type', 'startTime', 'endTime'].includes(field)) await input.selectOption(value)
@@ -245,7 +257,7 @@ test('browser overtime and leave balances reflect approval', async (t) => {
   await page.reload()
   await expect(page.getByTestId('comp-leave-balance')).toHaveText('4시간')
   await page.locator('[data-leave="date"]').fill('2026-09-08')
-  await page.locator('[data-leave="hours"]').fill('2')
+  await page.locator('[data-leave="hours"]').selectOption('4')
   await page.locator('[data-leave="reason"]').fill('브라우저 휴가')
   await page.locator('#leave-form button').click()
   await expect(page.locator('.comp-ledger').last()).toContainText(
@@ -261,14 +273,14 @@ test('browser overtime and leave balances reflect approval', async (t) => {
     page.locator('.comp-ledger').last().locator('tbody tr td').nth(3),
   ).toHaveText('승인')
   data = await (await request('/api/overtime?userId=user')).json()
-  assert.equal(data.balanceHours, 2)
+  assert.equal(data.balanceHours, 0)
 })
 
 test('browser failed saves keep input, pending saves lock fields and changing day protects notes', async (t) => {
   const { page, base } = await browserFixture(t)
   await page.goto(base + '/#comp-leave')
   await page.locator('[data-leave="date"]').fill('2026-09-10')
-  await page.locator('[data-leave="hours"]').fill('1.5')
+  await page.locator('[data-leave="hours"]').selectOption('4')
   await page.locator('[data-leave="reason"]').fill('실패해도 남을 사유')
   let release
   await page.route('**/api/leave', async (route) => {
@@ -288,7 +300,7 @@ test('browser failed saves keep input, pending saves lock fields and changing da
   await expect(page.locator('[data-leave="reason"]')).toHaveValue(
     '실패해도 남을 사유',
   )
-  await expect(page.locator('[data-leave="hours"]')).toHaveValue('1.5')
+  await expect(page.locator('[data-leave="hours"]')).toHaveValue('4')
   page.once('dialog', (dialog) => dialog.accept())
   await page.locator('[data-view="schedule"]').click()
   await page.locator('[data-user="user"]').first().click()
