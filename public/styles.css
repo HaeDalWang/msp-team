@@ -471,6 +471,26 @@ button.primary { border-color: transparent; background: var(--accent); color: #2
 .auth-login-button { margin-top: 10px; width: 100%; min-height: 44px; }
 #auth-logout:hover { color: #ff8a8a; border-color: #ff8a8a; }
 
+/* Calendar editing stays beside the selected date instead of a separate panel. */
+.schedule-management .schedule-layout { display: block; min-height: 0; overflow: visible; }
+.schedule-management .schedule-table-wrap { max-height: calc(100vh - 230px); border-radius: 10px; }
+.schedule-management .schedule-table :is(th, td) { height: 52px; padding: 0; }
+.schedule-management .schedule-table thead th { height: 66px; min-width: 72px; }
+.schedule-management .schedule-cell { border: 0; border-radius: 0; padding: 8px 4px; min-height: 52px; background: transparent; font-size: calc(12px * var(--font-scale)); }
+.schedule-management .schedule-cell.schedule-출근 { color: var(--faint); font-weight: 400; }
+.schedule-management .schedule-cell.schedule-휴가 { color: #d8506a; background: rgba(220,73,100,.12); }
+.schedule-management .schedule-cell:is(.schedule-오전반차,.schedule-오후반차) { color: #ac78dc; background: rgba(140,86,210,.12); }
+.schedule-management .schedule-cell.schedule-외근·출장 { color: #439acb; background: rgba(74,151,217,.12); }
+.schedule-management .schedule-table .part-cell { color: var(--muted); background: var(--panel-2); }
+.schedule-management .schedule-popover { position: fixed; z-index: 100; width: min(360px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--panel); box-shadow: 0 16px 50px #0005; }
+.schedule-popover > header { display: flex; justify-content: space-between; }
+.schedule-popover .selected-schedule { padding: 12px 14px; }
+.schedule-quick-types { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px; }
+.schedule-quick-types button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.schedule-popover details { padding: 12px; border-top: 1px solid var(--line); }
+.schedule-popover summary { cursor: pointer; color: var(--muted); font-size: var(--control-size); }
+.schedule-popover form .primary { margin: 12px; }
+
 /* Shared controls and responsive layouts across the team's work screens. */
 .management-page button, .view-switch button, .review-field button, .all-review-card button {
   min-height: 36px; padding: 7px 12px; border: 1px solid var(--line-strong);
@@ -497,7 +517,12 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .view-switch button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .editor-options { padding: 12px 20px; flex-shrink: 0; }
 .editor-options span { color: var(--muted); font-size: var(--control-size); }
-.required-review-grid.four-columns { width: 100%; max-width: none; height: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: auto; }
+.required-review-grid.four-columns { width: 100%; min-width: 0; max-width: none; height: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: auto; }
+.edit-view { width: 100%; min-width: 0; }
+.structured-editor.edit-space-first { display: block; width: 100%; padding: 0; }
+.editor-grid .required-review-grid.four-columns { margin: 0; min-height: 100%; gap: 1px; background: var(--line); }
+.editor-grid .review-field { border-radius: 0; border: 0; padding: 12px; }
+.editor-grid .review-field textarea { width: 100%; flex: 1; min-height: 200px; }
 .editor-list .required-review-grid.four-columns { grid-template-columns: minmax(0, 1fr); }
 .review-field textarea { min-height: 280px; font-size: calc(15px * var(--font-scale)); }
 .edit-space-first .review-field textarea { flex: none; min-height: 260px; }

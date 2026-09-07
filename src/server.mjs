@@ -176,7 +176,7 @@ export function createApp(pool, env = process.env) {
   app.get('/api/reviews', async (req, res) => {
     const week = v.date(req.query.weekEnd)
     const { rows } = await pool.query(
-      `SELECT u.id,u.name,p.name AS part,u.role,r.id AS review_id,r.work_highlights,r.action_items,r.tops_projects,r.other_notes,r.status,r.tickets_new,r.tickets_in_progress,r.tickets_done,r.version,r.updated_at,r.reviewed_by FROM users u LEFT JOIN parts p ON p.id=u.part_id LEFT JOIN reviews r ON r.user_id=u.id AND r.week_end=$1 WHERE (u.active=true OR r.id IS NOT NULL) AND (($3 AND u.id=$2) OR (NOT $3 AND u.part_id IS NOT NULL AND u.role NOT IN ('lead','executive'))) ORDER BY p.sort_order,p.name,u.joined_on NULLS LAST,u.name,u.id`,
+      `SELECT (SELECT type FROM schedule_entries WHERE user_id=u.id AND work_date=$1) AS meeting_schedule,(SELECT SUM(hours) FROM leave_requests WHERE user_id=u.id AND leave_date=$1 AND status='approved') AS meeting_leave_hours,u.id,u.name,p.name AS part,u.role,r.id AS review_id,r.work_highlights,r.action_items,r.tops_projects,r.other_notes,r.status,r.tickets_new,r.tickets_in_progress,r.tickets_done,r.version,r.updated_at,r.reviewed_by FROM users u LEFT JOIN parts p ON p.id=u.part_id LEFT JOIN reviews r ON r.user_id=u.id AND r.week_end=$1 WHERE (u.active=true OR r.id IS NOT NULL) AND (($3 AND u.id=$2) OR (NOT $3 AND u.part_id IS NOT NULL AND u.role NOT IN ('lead','executive'))) ORDER BY p.sort_order,p.name,u.joined_on NULLS LAST,u.name,u.id`,
       [week, req.session.userId, req.query.personal === 'true'],
     )
     res.json({
@@ -199,6 +199,9 @@ export function createApp(pool, env = process.env) {
         version: row.version ?? 0,
         updatedAt: row.updated_at ?? null,
         reviewedBy: row.reviewed_by ?? null,
+        meetingLeave: ['휴가', '오전반차', '오후반차'].includes(row.meeting_schedule)
+          ? row.meeting_schedule
+          : Number(row.meeting_leave_hours) > 0 ? `대체휴가 ${Number(row.meeting_leave_hours)}시간` : null,
       })),
     })
   })

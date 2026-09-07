@@ -2,6 +2,18 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { fixture, review, overtime } from './fixtures.mjs'
 
+test('review-day absence follows the selected Monday and approved leave only', async (t) => {
+  const { request, pool } = await fixture(t)
+  await request('/api/schedule', { method: 'PUT', body: { userId: 'user', date: '2026-09-07', type: '휴가' } })
+  const entries = async (week) => (await (await request(`/api/reviews?weekEnd=${week}`)).json()).entries
+  assert.equal((await entries('2026-09-07')).find((entry) => entry.id === 'user').meetingLeave, '휴가')
+  assert.equal((await entries('2026-09-14')).find((entry) => entry.id === 'user').meetingLeave, null)
+  await pool.query("INSERT INTO leave_requests(user_id,leave_date,hours,reason,status) VALUES('other','2026-09-07',4,'test','pending')")
+  assert.equal((await entries('2026-09-07')).find((entry) => entry.id === 'other').meetingLeave, null)
+  await pool.query("UPDATE leave_requests SET status='approved' WHERE user_id='other'")
+  assert.equal((await entries('2026-09-07')).find((entry) => entry.id === 'other').meetingLeave, '대체휴가 4시간')
+})
+
 test('presentation order follows part order then join date and excludes nonparticipants', async (t) => {
   const { request, pool } = await fixture(t)
   for (const [id, joinedOn] of [['user', '2020-01-01'], ['other', '2022-01-01']]) {

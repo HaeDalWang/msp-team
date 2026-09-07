@@ -104,7 +104,7 @@ const state = {
   fontScale: Math.min(130, Math.max(85, Number(localStorage.getItem('msp-font-scale')) || 110)),
   reviewMode: 'single',
   editorMode: localStorage.getItem('msp-editor-mode') === 'list' ? 'list' : 'grid',
-  light: false,
+  light: localStorage.getItem('msp-theme') === 'light',
   query: '',
   leftOpen: true,
   rightOpen: true,
@@ -440,8 +440,12 @@ function mainView() {
   return ''
 }
 
+function leaveNotice(entry) {
+  return entry?.meetingLeave ? `<div class="absence" role="note"><strong>${escapeHtml(entry.name)}님은 회고일(${escapeHtml(state.reviewEnd)})에 ${escapeHtml(entry.meetingLeave)}입니다.</strong></div>` : ''
+}
+
 function reviewView() {
-  if (state.reviewMode === 'all') return `<main class="all-reviews">${filteredEntries().map((entry) => `<article class="all-review-card"><header><h1>${escapeHtml(entry.name)}</h1><span class="part-badge">${escapeHtml(entry.part)}</span>${statusBadge(entry.status)}<button data-open-review="${escapeAttr(entry.id)}">상세·코멘트</button></header><p class="all-ticket-summary">신규 ${entry.tickets[0]} · 진행 중 ${entry.tickets[1]} · 종료 ${entry.tickets[2]}</p>${reviewFields.map((field, index) => `<section><h2>${['주요 업무 현황', '주요 계획 / Action Item', '프로젝트/과제 현황(TOPS)', '기타 사항'][index]}</h2><p>${escapeHtml(entry.raw?.[field] || '작성된 내용 없음')}</p></section>`).join('')}</article>`).join('') || '<p>표시할 회고가 없습니다.</p>'}</main>`
+  if (state.reviewMode === 'all') return `<main class="all-reviews">${filteredEntries().map((entry) => `<article class="all-review-card"><header><h1>${escapeHtml(entry.name)}</h1><span class="part-badge">${escapeHtml(entry.part)}</span>${statusBadge(entry.status)}<button data-open-review="${escapeAttr(entry.id)}">상세·코멘트</button></header>${leaveNotice(entry)}<p class="all-ticket-summary">신규 ${entry.tickets[0]} · 진행 중 ${entry.tickets[1]} · 종료 ${entry.tickets[2]}</p>${reviewFields.map((field, index) => `<section><h2>${['주요 업무 현황', '주요 계획 / Action Item', '프로젝트/과제 현황(TOPS)', '기타 사항'][index]}</h2><p>${escapeHtml(entry.raw?.[field] || '작성된 내용 없음')}</p></section>`).join('')}</article>`).join('') || '<p>표시할 회고가 없습니다.</p>'}</main>`
   const selected = selectedEntry() ??
     state.entries[0] ?? {
       name: '회고 없음',
@@ -515,6 +519,7 @@ function reviewView() {
       <div class="person-identity"><h1>${escapeHtml(selected.name)}</h1><span class="part-badge">${escapeHtml(selected.part)}</span>${statusBadge(selected.status)}</div>
       <div class="ticket-chips">${['신규', '진행 중', '종료'].map((label, index) => `<div class="ticket-chip ticket-${index}"><span>${label}</span><strong>${selected.tickets[index]}</strong><small>${previous ? delta(selected.tickets[index], previous.tickets[index]) : '—'}</small></div>`).join('')}</div>
     </div>
+    ${leaveNotice(selected)}
     <div class="review-scroll">
       ${!hasAnyContent ? emptyReview(selected.name) : ''}
       ${sections
@@ -832,6 +837,7 @@ function bindEvents(root) {
     ?.addEventListener('click', (event) => event.stopPropagation())
   root.querySelector('#theme-toggle')?.addEventListener('click', () => {
     state.light = !state.light
+    localStorage.setItem('msp-theme', state.light ? 'light' : 'dark')
     render()
   })
   root.querySelector('#slack-share')?.addEventListener('click', async () => {
