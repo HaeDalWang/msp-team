@@ -101,6 +101,9 @@ const state = {
   selectedName: null,
   dateOpen: false,
   settingsOpen: false,
+  profile: null,
+  profileBusy: false,
+  profileMessage: '',
   fontScale: Math.min(130, Math.max(85, Number(localStorage.getItem('msp-font-scale')) || 110)),
   reviewMode: 'single',
   editorMode: localStorage.getItem('msp-editor-mode') === 'list' ? 'list' : 'grid',
@@ -360,6 +363,9 @@ function topbar() {
         state.settingsOpen
           ? `<div class="settings-popover">
         <div class="settings-user"><span class="current-user-chip">${icon('User', 15)} ${escapeHtml(authState.user?.name ?? '')}</span></div>
+        <button id="profile-open" ${state.profileBusy ? 'disabled' : ''}>내 정보 ${state.profile ? '다시 불러오기' : '수정'}</button>
+        ${state.profile ? `<form id="profile-form"><label>이메일<input id="profile-email" type="email" maxlength="254" value="${escapeAttr(state.profile.email)}" ${state.profileBusy ? 'disabled' : ''}></label><label>입사일<input id="profile-joined" type="date" value="${escapeAttr(state.profile.joinedOn ?? '')}" ${state.profileBusy ? 'disabled' : ''}></label><small>입사일은 회고 발표 순서에 반영됩니다.</small><button type="submit" class="primary" ${state.profileBusy ? 'disabled' : ''}>${state.profileBusy ? '저장 중…' : '내 정보 저장'}</button></form>` : ''}
+        ${state.profileMessage ? `<p role="status" class="profile-message">${escapeHtml(state.profileMessage)}</p>` : ''}
         <button id="theme-toggle">${icon(state.light ? 'Moon' : 'Sun', 16)} ${state.light ? '다크 모드' : '라이트 모드'}</button>
         <div class="settings-font-scale">
           <span>${icon('CaseSensitive', 16)} 글자 크기 <em>${state.fontScale}%</em></span>
@@ -786,6 +792,31 @@ document.addEventListener('click', () => {
 })
 
 function bindEvents(root) {
+  root.querySelector('#profile-open')?.addEventListener('click', async () => {
+    if (state.profileBusy || (state.profile && !confirm('입력한 내용을 서버의 정보로 다시 불러올까요?'))) return
+    state.profileBusy = true
+    state.profileMessage = ''
+    render()
+    try { state.profile = await api('/api/profile') }
+    catch (error) { state.profileMessage = error.message }
+    finally { state.profileBusy = false; render() }
+  })
+  for (const [id, field] of [['profile-email', 'email'], ['profile-joined', 'joinedOn']])
+    root.querySelector(`#${id}`)?.addEventListener('input', (event) => { state.profile[field] = event.target.value })
+  root.querySelector('#profile-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    if (state.profileBusy) return
+    state.profileBusy = true
+    state.profileMessage = ''
+    render()
+    try {
+      state.profile = await api('/api/profile', { method: 'PUT', body: JSON.stringify(state.profile) })
+      state.profileMessage = '내 정보를 저장했습니다.'
+      if (['review', 'dashboard', 'edit'].includes(state.view)) await ensureReviewEntries()
+      if (state.view === 'organization') await loadOrganization()
+    } catch (error) { state.profileMessage = error.message }
+    finally { state.profileBusy = false; render() }
+  })
   root.querySelectorAll('[data-review-mode]').forEach((button) => button.addEventListener('click', () => {
     state.reviewMode = button.dataset.reviewMode
     render()

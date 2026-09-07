@@ -470,6 +470,11 @@ button.primary { border-color: transparent; background: var(--accent); color: #2
 .auth-gate-card p { margin: 0; color: var(--muted); font-size: calc(13px * var(--font-scale)); line-height: 1.5; }
 .auth-login-button { margin-top: 10px; width: 100%; min-height: 44px; }
 #auth-logout:hover { color: #ff8a8a; border-color: #ff8a8a; }
+#profile-form { display: grid; gap: 12px; padding: 12px 8px; border-block: 1px solid var(--line); }
+#profile-form label { display: grid; gap: 6px; color: var(--muted); font-size: var(--control-size); }
+#profile-form input { width: 100%; min-width: 0; padding: 8px; background: var(--panel); color: var(--text); border: 1px solid var(--line-strong); border-radius: 6px; font: inherit; }
+#profile-form small, .profile-message { font-size: var(--control-size); color: var(--muted); line-height: 1.5; }
+.settings-popover { max-height: calc(100vh - 80px); overflow-y: auto; }
 .management-page .checkbox-field { display: flex; align-items: center; justify-content: flex-start; gap: 8px; min-height: 32px; }
 .management-page .checkbox-field input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; margin: 0; flex: 0 0 18px; }
 .managed-customer-card footer { flex-wrap: wrap; gap: 8px; padding-top: 8px; padding-bottom: 8px; }

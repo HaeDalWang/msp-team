@@ -20,6 +20,22 @@ async function browserFixture(t, user = 'user') {
   return { ...f, page, context }
 }
 
+test('engineer edits profile from settings and values survive reload', async (t) => {
+  const { page, base } = await browserFixture(t)
+  await page.goto(base + '/#review')
+  await page.locator('#settings-toggle').click()
+  await page.locator('#profile-open').click()
+  await page.locator('#profile-email').fill('myself@example.com')
+  await page.locator('#profile-joined').fill('2021-04-05')
+  await page.getByRole('button', { name: '내 정보 저장', exact: true }).click()
+  await expect(page.locator('.profile-message')).toHaveText('내 정보를 저장했습니다.')
+  await page.reload()
+  await page.locator('#settings-toggle').click()
+  await page.locator('#profile-open').click()
+  await expect(page.locator('#profile-email')).toHaveValue('myself@example.com')
+  await expect(page.locator('#profile-joined')).toHaveValue('2021-04-05')
+})
+
 test('light theme persists, editor fills width, calendar quick-save informs review absence', async (t) => {
   const { page, base, request } = await browserFixture(t, 'admin')
   await page.goto(base + '/?week=2026-09-07#edit')

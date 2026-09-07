@@ -173,6 +173,20 @@ export function createApp(pool, env = process.env) {
     })
   })
 
+  app.get('/api/profile', async (req, res) => {
+    const { rows } = await pool.query('SELECT email,joined_on AS "joinedOn",version FROM users WHERE id=$1', [req.session.userId])
+    res.json(rows[0])
+  })
+  app.put('/api/profile', async (req, res) => {
+    if (Object.keys(req.body).some((key) => !['email', 'joinedOn', 'version'].includes(key)))
+      v.fail(400, '내 정보에서는 이메일과 입사일만 수정할 수 있습니다.')
+    const version = v.integer(req.body.version, 'version')
+    const fields = userFields({ email: req.body.email, joinedOn: req.body.joinedOn })
+    const { rows } = await pool.query('UPDATE users SET email=$1,joined_on=$2,version=version+1 WHERE id=$3 AND version=$4 RETURNING email,joined_on AS "joinedOn",version', [fields.email, fields.joined_on, req.session.userId, version])
+    if (!rows.length) v.fail(409, '다른 곳에서 프로필이 변경되었습니다. 다시 불러온 후 저장하세요.')
+    res.json(rows[0])
+  })
+
   app.get('/api/reviews', async (req, res) => {
     const week = v.date(req.query.weekEnd)
     const { rows } = await pool.query(
