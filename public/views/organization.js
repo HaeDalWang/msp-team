@@ -64,8 +64,8 @@ function memberForm() {
       )
       .join('')}</select></label>
     <label>출근<input data-member-field="workStart" type="time" required value="${h(draft.workStart ?? '09:00')}"></label><label>퇴근<input data-member-field="workEnd" type="time" required value="${h(draft.workEnd ?? '18:00')}"></label>
-    ${state.editing !== 'new' ? `<label><input data-member-field="active" type="checkbox" ${draft.active !== false ? 'checked' : ''}> 활성 구성원 (해제하면 로그인 차단)</label>` : ''}
-    <button class="primary" ${state.busy ? 'disabled' : ''}>저장</button><button type="button" id="member-cancel" ${state.busy ? 'disabled' : ''}>취소</button></form></section>`
+    ${state.editing !== 'new' ? `<label class="checkbox-field member-active"><input data-member-field="active" type="checkbox" ${draft.active !== false ? 'checked' : ''}> 활성 구성원 (해제하면 로그인 차단)</label>` : ''}
+    <div class="member-form-actions"><button class="primary" ${state.busy ? 'disabled' : ''}>저장</button><button type="button" id="member-cancel" ${state.busy ? 'disabled' : ''}>취소</button></div></form></section>`
 }
 export function renderOrganization() {
   const canEdit = isAdmin()

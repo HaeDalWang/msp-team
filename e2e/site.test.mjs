@@ -202,6 +202,7 @@ test('browser customer edit, transfer, dynamic part and schedule note persistenc
     page.locator('.org-column h2', { hasText: '동적 추가 파트' }),
   ).toBeVisible()
   await page.locator('[data-edit-member="other"]').click()
+  await page.screenshot({ path: '/tmp/msp-member-form-layout.png' })
   await page
     .locator('[data-member-field="partId"]')
     .selectOption({ label: '동적 추가 파트' })
