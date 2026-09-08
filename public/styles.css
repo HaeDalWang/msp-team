@@ -575,3 +575,24 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .org-summary { flex-wrap: wrap; }
 }
 .comp-api-error { margin: 0 0 10px; padding: 10px 12px; border: 1px solid #9b483f; border-radius: 7px; color: #ffb0a6; background: rgba(155, 72, 63, .14); font-size: calc(11px * var(--font-scale)); }
+
+/* Presentation controls remain available at narrow widths. */
+.presentation-nav { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); }
+.presentation-nav select, .presentation-nav button { max-width:100%; padding:8px; color:var(--text); background:var(--panel-2); border:1px solid var(--line); border-radius:6px; font:inherit; }
+.presentation-nav label { min-width:0; flex:1; }
+.presentation-position { white-space:nowrap; color:var(--muted); }
+#review-comments-toggle { display:none; }
+.sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.calendar-notice { padding:10px 12px; border:1px solid var(--line); border-radius:8px; color:var(--muted); line-height:1.6; }
+.schedule-cell small { display:block; font-size:inherit; color:var(--accent); }
+@media (max-width:1180px) {
+  #review-comments-toggle { display:inline-flex; }
+  .review-layout .review-panel.compact-open { display:block; position:fixed; z-index:60; right:8px; top:160px; bottom:12px; width:min(380px,calc(100vw - 16px)); overflow:auto; background:var(--panel); border:1px solid var(--line-strong); box-shadow:0 12px 40px #0005; }
+  .topbar { flex-wrap:wrap; height:auto; min-height:60px; }
+  .topbar .searchbox { display:flex; min-width:140px; flex:1; }
+}
+@media (max-width:860px) {
+  .presentation-nav { gap:6px; padding:8px; }
+  .presentation-nav select { width:100%; }
+  .review-layout .review-content { min-width:0; }
+}

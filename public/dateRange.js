@@ -35,8 +35,7 @@ export function getReviewPeriod(reviewEnd) {
 export function getCurrentReviewEnd(now = new Date()) {
   const today = seoulDate(now)
   const weekday = parseIsoDate(today).getUTCDay()
-  const daysUntilMonday = weekday === 1 ? 0 : (8 - weekday) % 7
-  return addDays(today, daysUntilMonday)
+  return addDays(today, -((weekday + 6) % 7))
 }
 
 export function moveReviewWeek(reviewEnd, direction) {

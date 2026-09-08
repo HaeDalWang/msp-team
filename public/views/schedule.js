@@ -2,7 +2,7 @@ import { icon } from '../icons.js'
 import { isAdminOrLead, isSelfOrAdminOrLead } from '../session.js'
 import { api } from '../api.js'
 import { escapeHtml as h } from '../html.js'
-import { koreanPublicHolidays } from '../koreanHolidays.js'
+import { koreanPublicHolidays, holidayDataYears, hasHolidayData } from '../koreanHolidays.js'
 
 const today = () =>
   new Intl.DateTimeFormat('en-CA', {
@@ -41,7 +41,7 @@ export const scheduleDirty = () => {
     Boolean(state.holidayDate || state.holidayName) ||
     Boolean(
       state.selected &&
-      ((state.selected.type ?? '') !== (saved?.type ?? getDefaultType(state.selected.date)) ||
+      (Boolean(state.selected.endDate && state.selected.endDate !== state.selected.date) || (state.selected.type ?? '') !== (saved?.type ?? getDefaultType(state.selected.date)) ||
         (state.selected.note ?? '') !== (saved?.note ?? '')),
     )
   )
@@ -113,7 +113,7 @@ export function renderSchedule() {
   const editable = selected && isSelfOrAdminOrLead(selected.userId)
   return `<main class="management-page schedule-management"><div class="management-heading"><div><span class="eyebrow">TEAM SCHEDULE</span><h1>팀 일정 관리</h1><p>평일은 기본 출근입니다. 날짜 칸을 눌러 휴가·외근을 바로 선택하세요.</p></div>${isAdminOrLead() ? '<button id="holiday-manager-toggle">휴일 관리</button>' : ''}</div>
     ${state.error ? `<div role="alert" class="comp-api-error">${h(state.error)} <button id="schedule-retry">다시 조회</button></div>` : ''}
-    <div class="schedule-toolbar"><div class="month-picker"><button id="previous-month" ${state.busy ? 'disabled' : ''} aria-label="이전 달">${icon('ChevronLeft', 17)}</button><strong>${h(state.month)}</strong><button id="next-month" ${state.busy ? 'disabled' : ''} aria-label="다음 달">${icon('ChevronRight', 17)}</button><button id="current-month" ${state.busy ? 'disabled' : ''}>오늘</button></div></div>
+    <p class="calendar-notice">기본 공휴일 자료: ${holidayDataYears[0]}–${holidayDataYears.at(-1)}년. 임시공휴일·변경 사항은 관리자에게 확인해 주세요.${!hasHolidayData(state.month.slice(0, 4)) ? '<strong role="alert"> 이 연도는 설·추석·대체공휴일 자료가 없습니다. 휴일 관리에서 등록해 주세요.</strong>' : ''}</p>\n    <div class="schedule-toolbar"><div class="month-picker"><button id="previous-month" ${state.busy ? 'disabled' : ''} aria-label="이전 달">${icon('ChevronLeft', 17)}</button><strong>${h(state.month)}</strong><button id="next-month" ${state.busy ? 'disabled' : ''} aria-label="다음 달">${icon('ChevronRight', 17)}</button><button id="current-month" ${state.busy ? 'disabled' : ''}>오늘</button></div></div>
     ${state.manager && isAdminOrLead() ? `<section class="holiday-manager-panel"><h2>휴일 관리</h2><form id="holiday-form" class="holiday-form"><label>날짜<input id="holiday-date" type="date" required value="${h(state.holidayDate)}"></label><label>이름<input id="holiday-name" required maxlength="100" value="${h(state.holidayName)}"></label><button class="primary" ${state.busy ? 'disabled' : ''}>휴일 추가</button></form><div class="holiday-list">${state.holidays.map((item) => `<span>${h(item.date)} · ${h(item.name)} <button data-remove-holiday="${h(item.date)}" ${state.busy ? 'disabled' : ''} aria-label="${h(item.name)} 삭제">×</button></span>`).join('') || '<p>등록된 휴일이 없습니다.</p>'}</div></section>` : ''}
     <div class="schedule-layout"><div class="schedule-table-wrap"><table class="schedule-table"><thead><tr><th class="part-col">파트</th><th class="name-col">이름</th><th class="hours-col">근무 시간</th>${days.map((day) => `<th class="${dayClasses(day, 'header')}"><strong>${day.number}</strong><span>${day.weekday}</span><em>${h(officialHolidays.get(day.date) ?? manualHolidays.get(day.date) ?? '')}</em></th>`).join('')}</tr></thead><tbody>${state.members
       .map(
@@ -122,12 +122,14 @@ export function renderSchedule() {
             .map((day) => {
               const entry = state.entries[member.id]?.[day.date]
               const type = types.includes(entry?.type) ? entry.type : defaultType(day, officialHolidays, manualHolidays)
-              return `<td class="${dayClasses(day, 'cell')}"><button class="schedule-cell schedule-${type || 'empty'}" data-user="${h(member.id)}" data-date="${day.date}" ${state.busy ? 'disabled' : ''}>${h(type || '—')}</button></td>`
+              const label = entry?.leaveHours ? `대체휴가 ${entry.leaveHours}h` : type || '—'
+              const conflict = entry?.leaveHours && entry.type ? `기존 일정: ${entry.type}` : ''
+              return `<td class="${dayClasses(day, 'cell')}"><button class="schedule-cell schedule-${type || 'empty'}" data-user="${h(member.id)}" data-date="${day.date}" ${state.busy ? 'disabled' : ''}>${h(label)}${conflict ? `<small>${h(conflict)}</small>` : ''}</button></td>`
             })
             .join('')}</tr>`,
       )
       .join('')}</tbody></table></div>
-    ${selected ? `<aside class="schedule-editor schedule-popover" role="dialog" aria-label="일정 빠른 설정" style="left:${state.anchor.x}px;top:${state.anchor.y}px"><header><strong>일정 설정</strong><button id="schedule-close" type="button" aria-label="일정 설정 닫기" ${state.busy ? 'disabled' : ''}>×</button></header>` : ''}${selected ? `<form id="schedule-form"><div class="selected-schedule"><span>${h(selected.name)}</span><strong>${h(selected.date)}</strong></div>${editable ? `<div class="schedule-quick-types">${types.map((type) => `<button type="button" data-quick-type="${h(type)}" aria-pressed="${selected.type === type}" ${state.busy ? 'disabled' : ''}>${h(type)}</button>`).join('')}</div>` : ''}<details ${state.detailsOpen ? 'open' : ''}><summary>메모·상세 수정</summary><label>일정 유형<select id="schedule-type" ${editable ? '' : 'disabled'}><option value="">기본 일정으로 되돌리기</option>${types.map((type) => `<option ${type === selected.type ? 'selected' : ''}>${type}</option>`).join('')}</select></label><label>사유<textarea id="schedule-note" maxlength="2000" ${editable ? '' : 'readonly'}>${h(selected.note)}</textarea></label>${editable ? `<button class="primary" ${state.busy ? 'disabled' : ''}>저장</button>` : '<p>본인 또는 관리자·팀장만 수정할 수 있습니다.</p>'}</details></form></aside>` : ''}</div></main>`
+    ${selected ? `<aside class="schedule-editor schedule-popover" role="dialog" aria-label="일정 빠른 설정" style="left:${state.anchor.x}px;top:${state.anchor.y}px;max-height:calc(100dvh - ${state.anchor.y + 8}px)"><header><strong>일정 설정</strong><button id="schedule-close" type="button" aria-label="일정 설정 닫기" ${state.busy ? 'disabled' : ''}>×</button></header>` : ''}${selected ? `<form id="schedule-form"><div class="selected-schedule"><span>${h(selected.name)}</span><strong>${h(selected.date)}</strong></div>${selected.leaveHours ? `<p class="calendar-notice">승인된 대체휴가 ${h(selected.leaveHours)}시간입니다. 휴가 취소는 대체휴가 원장에서 처리하세요.${selected.type ? ` 기존 일정: ${h(selected.type)}` : ''}</p>` : ''}${editable ? `<div class="schedule-quick-types">${types.map((type) => `<button type="button" data-quick-type="${h(type)}" aria-pressed="${selected.type === type}" ${state.busy ? 'disabled' : ''}>${h(type)}</button>`).join('')}</div>` : ''}<details ${state.detailsOpen ? 'open' : ''}><summary>메모·상세 수정</summary>${editable ? `<label>적용 종료일 (최대 31일·주말 포함)<input id="schedule-end-date" type="date" min="${h(selected.date)}" value="${h(selected.endDate ?? selected.date)}"></label><small>여러 날짜 선택 시 해당 기간의 기존 일정·메모를 덮어씁니다. 승인된 대체휴가는 유지됩니다.</small>` : ''}<label>일정 유형<select id="schedule-type" ${editable ? '' : 'disabled'}><option value="">기본 일정으로 되돌리기</option>${types.map((type) => `<option ${type === selected.type ? 'selected' : ''}>${type}</option>`).join('')}</select></label><label>사유<textarea id="schedule-note" maxlength="2000" ${editable ? '' : 'readonly'}>${h(selected.note)}</textarea></label>${editable ? `<button class="primary" ${state.busy ? 'disabled' : ''}>저장</button>` : '<p>본인 또는 관리자·팀장만 수정할 수 있습니다.</p>'}</details></form></aside>` : ''}</div></main>`
 }
 export function bindSchedule(root, rerender) {
   root.querySelector('.schedule-popover details')?.addEventListener('toggle', (event) => {
@@ -145,6 +147,7 @@ export function bindSchedule(root, rerender) {
   root.querySelectorAll('[data-quick-type]').forEach((button) => button.addEventListener('click', () => {
     if (!state.selected || !isSelfOrAdminOrLead(state.selected.userId)) return
     const selected = { ...state.selected, type: button.dataset.quickType }
+    if (selected.endDate && selected.endDate !== selected.date && !confirm(`${selected.date}부터 ${selected.endDate}까지 기존 일정과 메모를 덮어쓸까요?`)) return
     run(async () => {
       await api('/api/schedule', { method: 'PUT', body: JSON.stringify(selected) })
       state.selected = null
@@ -264,6 +267,7 @@ export function bindSchedule(root, rerender) {
       root.querySelector('#schedule-close')?.focus({ preventScroll: true })
     }),
   )
+  root.querySelector('#schedule-end-date')?.addEventListener('input', (event) => { state.selected.endDate = event.target.value })
   root.querySelector('#schedule-type')?.addEventListener('change', (event) => {
     state.selected.type = event.target.value
   })
@@ -272,6 +276,7 @@ export function bindSchedule(root, rerender) {
   })
   root.querySelector('#schedule-form')?.addEventListener('submit', (event) => {
     event.preventDefault()
+    if (state.selected?.endDate && state.selected.endDate !== state.selected.date && !confirm(`${state.selected.date}부터 ${state.selected.endDate}까지 기존 일정과 메모를 덮어쓸까요?`)) return
     if (state.selected && isSelfOrAdminOrLead(state.selected.userId))
       run(async () => {
         const selected = { ...state.selected }
@@ -279,9 +284,7 @@ export function bindSchedule(root, rerender) {
           method: 'PUT',
           body: JSON.stringify(selected),
         })
-        state.selected = selected.type ? selected : {
-          ...selected, type: getDefaultType(selected.date), note: '',
-        }
+        state.selected = { ...selected, endDate: selected.date, type: selected.type || (selected.note ? '' : getDefaultType(selected.date)) }
       })
   })
 }

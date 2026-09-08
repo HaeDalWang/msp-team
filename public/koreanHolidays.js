@@ -25,6 +25,9 @@ const variableHolidays = {
   ],
 }
 
+export const holidayDataYears = Object.keys(variableHolidays).map(Number)
+export const hasHolidayData = (year) => holidayDataYears.includes(Number(year))
+
 export function koreanPublicHolidays(year) {
   const dates = new Map(fixedHolidays.map(([monthDay, name]) => [`${year}-${monthDay}`, name]))
   for (const [monthDay, name] of variableHolidays[year] ?? []) dates.set(`${year}-${monthDay}`, name)

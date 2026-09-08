@@ -190,7 +190,7 @@ export function createApp(pool, env = process.env) {
   app.get('/api/reviews', async (req, res) => {
     const week = v.date(req.query.weekEnd)
     const { rows } = await pool.query(
-      `SELECT (SELECT type FROM schedule_entries WHERE user_id=u.id AND work_date=$1) AS meeting_schedule,(SELECT SUM(hours) FROM leave_requests WHERE user_id=u.id AND leave_date=$1 AND status='approved') AS meeting_leave_hours,u.id,u.name,p.name AS part,u.role,r.id AS review_id,r.work_highlights,r.action_items,r.tops_projects,r.other_notes,r.status,r.tickets_new,r.tickets_in_progress,r.tickets_done,r.version,r.updated_at,r.reviewed_by FROM users u LEFT JOIN parts p ON p.id=u.part_id LEFT JOIN reviews r ON r.user_id=u.id AND r.week_end=$1 WHERE (u.active=true OR r.id IS NOT NULL) AND (($3 AND u.id=$2) OR (NOT $3 AND u.part_id IS NOT NULL AND u.role NOT IN ('lead','executive'))) ORDER BY p.sort_order,p.name,u.joined_on NULLS LAST,u.name,u.id`,
+      `SELECT (SELECT type FROM schedule_entries WHERE user_id=u.id AND work_date=$1) AS meeting_schedule,(SELECT SUM(hours) FROM leave_requests WHERE user_id=u.id AND leave_date=$1 AND status='approved') AS meeting_leave_hours,u.id,u.name,p.name AS part,u.role,r.id AS review_id,r.work_highlights,r.action_items,r.tops_projects,r.other_notes,r.status,r.tickets_new,r.tickets_in_progress,r.tickets_done,r.version,r.updated_at,r.reviewed_by FROM users u LEFT JOIN parts p ON p.id=u.part_id LEFT JOIN reviews r ON r.user_id=u.id AND r.week_end=$1 WHERE (u.active=true OR r.id IS NOT NULL) AND (($3 AND u.id=$2) OR (NOT $3 AND (r.id IS NOT NULL OR (u.part_id IS NOT NULL AND u.role NOT IN ('lead','executive'))))) ORDER BY p.sort_order,p.name,u.joined_on NULLS LAST,u.name,u.id`,
       [week, req.session.userId, req.query.personal === 'true'],
     )
     res.json({
@@ -402,25 +402,35 @@ export function createApp(pool, env = process.env) {
         note: row.note,
       }
     }
+    const leaves = await pool.query(
+      "SELECT user_id,leave_date,SUM(hours) AS hours FROM leave_requests WHERE status='approved' AND leave_date >= ($1 || '-01')::date AND leave_date < ($1 || '-01')::date + interval '1 month' GROUP BY user_id,leave_date",
+      [month],
+    )
+    for (const row of leaves.rows) {
+      entries[row.user_id] ??= {}
+      const date = calendarDate(row.leave_date)
+      entries[row.user_id][date] ??= { note: '' }
+      entries[row.user_id][date].leaveHours = Number(row.hours)
+    }
     res.json({ entries })
   })
   app.put('/api/schedule', selfOrLead, async (req, res) => {
     const b = req.body
     v.text(b.userId, '사용자')
     v.date(b.date)
+    const endDate = v.date(b.endDate ?? b.date)
+    const span = (Date.parse(endDate) - Date.parse(b.date)) / 86400000
+    if (span < 0 || span > 30) v.fail(400, '기간은 시작일부터 최대 31일 이내로 선택하세요.')
     v.choice(b.type, scheduleTypes, '일정 유형')
     v.text(b.note ?? '', '사유', { required: false })
     await activeUser(pool, b.userId)
-    if (!b.type && !b.note)
-      await pool.query(
-        'DELETE FROM schedule_entries WHERE user_id=$1 AND work_date=$2',
-        [b.userId, b.date],
-      )
-    else
-      await pool.query(
-        'INSERT INTO schedule_entries(user_id,work_date,type,note) VALUES($1,$2,$3,$4) ON CONFLICT(user_id,work_date) DO UPDATE SET type=EXCLUDED.type,note=EXCLUDED.note',
-        [b.userId, b.date, b.type, b.note ?? ''],
-      )
+    await transaction(pool, async (db) => {
+      await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [b.userId])
+      if (!b.type && !b.note)
+        await db.query('DELETE FROM schedule_entries WHERE user_id=$1 AND work_date BETWEEN $2 AND $3', [b.userId, b.date, endDate])
+      else
+        await db.query("INSERT INTO schedule_entries(user_id,work_date,type,note) SELECT $1,day::date,$4,$5 FROM generate_series($2::date,$3::date,interval '1 day') AS day ON CONFLICT(user_id,work_date) DO UPDATE SET type=EXCLUDED.type,note=EXCLUDED.note", [b.userId, b.date, endDate, b.type, b.note ?? ''])
+    })
     res.status(204).end()
   })
   app.get('/api/holidays', async (_req, res) => {
@@ -627,6 +637,9 @@ function registerLeaveRoutes(app, pool, leadOnly, selfOnly) {
         detail: r.detail,
         evidence: r.evidence,
         status: r.status,
+        cancellationReason: r.cancellation_reason,
+        cancelledBy: r.cancelled_by,
+        cancelledAt: r.cancelled_at,
       })),
       leaves: leave.rows.map((r) => ({
         id: r.id,
@@ -634,6 +647,9 @@ function registerLeaveRoutes(app, pool, leadOnly, selfOnly) {
         hours: Number(r.hours),
         reason: r.reason,
         status: r.status,
+        cancellationReason: r.cancellation_reason,
+        cancelledBy: r.cancelled_by,
+        cancelledAt: r.cancelled_at,
       })),
     })
   })
@@ -656,7 +672,7 @@ function registerLeaveRoutes(app, pool, leadOnly, selfOnly) {
         req.session.userId,
       ])
       const duplicate = await db.query(
-        `SELECT id FROM overtime_records WHERE user_id=$1 AND status<>'rejected'
+        `SELECT id FROM overtime_records WHERE user_id=$1 AND status IN ('pending','approved')
          AND tsrange(work_date + start_time,
            work_date + end_time + CASE WHEN end_time < start_time THEN interval '1 day' ELSE interval '0 day' END, '[)')
          && tsrange($2::date + $3::time,
@@ -697,7 +713,7 @@ function registerLeaveRoutes(app, pool, leadOnly, selfOnly) {
         req.session.userId,
       ])
       const duplicate = await db.query(
-        "SELECT id FROM leave_requests WHERE user_id=$1 AND leave_date=$2 AND status<>'rejected'",
+        "SELECT id FROM leave_requests WHERE user_id=$1 AND leave_date=$2 AND status IN ('pending','approved')",
         [req.session.userId, v.date(b.date)],
       )
       if (duplicate.rowCount)
@@ -717,6 +733,26 @@ function registerLeaveRoutes(app, pool, leadOnly, selfOnly) {
     ['overtime', 'overtime_records'],
     ['leave', 'leave_requests'],
   ]) {
+    app.post(`/api/${path}/:id/cancel`, leadOnly, async (req, res) => {
+      const reason = v.text(req.body.reason, '승인 취소 사유', { max: 2000 })
+      await transaction(pool, async (db) => {
+        const initial = await db.query(`SELECT user_id FROM ${table} WHERE id=$1`, [req.params.id])
+        if (!initial.rowCount) v.fail(404, '기록이 없습니다.')
+        const userId = initial.rows[0].user_id
+        await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [userId])
+        const { rows } = await db.query(`SELECT * FROM ${table} WHERE id=$1 FOR UPDATE`, [req.params.id])
+        const record = rows[0]
+        if (!record || record.status !== 'approved') v.fail(409, '승인된 기록만 취소할 수 있습니다.')
+        if (path === 'overtime') {
+          const balance = await db.query(summarySql + ' WHERE u.id=$1', [userId])
+          const account = totals(balance.rows[0])
+          if (Number(record.hours) > account.balanceHours - account.pendingLeaveHours)
+            v.fail(409, '이미 사용했거나 사용 신청 중인 시간입니다. 해당 휴가부터 취소하세요.')
+        }
+        await db.query(`UPDATE ${table} SET status='cancelled',cancellation_reason=$1,cancelled_by=$2,cancelled_at=now() WHERE id=$3`, [reason, req.session.userId, req.params.id])
+      })
+      res.status(204).end()
+    })
     for (const action of ['approve', 'reject'])
       app.post(`/api/${path}/:id/${action}`, leadOnly, async (req, res) => {
         await transaction(pool, async (db) => {

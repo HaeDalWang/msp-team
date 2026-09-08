@@ -6,6 +6,7 @@ const statusLabels = {
   pending: '검토 대기',
   approved: '승인',
   rejected: '반려',
+  cancelled: '승인 취소',
 }
 const types = ['기술지원', '작업', '장애대응', '점검']
 function timeSelect(field, value) {
@@ -90,14 +91,18 @@ async function loadSelected() {
 function hours(value) {
   return value == null ? '미조회' : `${h(value)}시간`
 }
+function cancellationInfo(record) {
+  return record.cancellationReason ? `<small>취소 사유: ${h(record.cancellationReason)} · 처리자 ${h(state.members.find((member) => member.id === record.cancelledBy)?.name ?? record.cancelledBy)} · ${h(new Date(record.cancelledAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }))}</small>` : ''
+}
 function actions(record, kind) {
   const own = state.selected === session.user?.userId
-  return `${record.status === 'pending' && isAdminOrLead() ? `<button data-record="${h(record.id)}" data-kind="${kind}" data-action="approve" ${state.busy ? 'disabled' : ''}>승인</button><button data-record="${h(record.id)}" data-kind="${kind}" data-action="reject" ${state.busy ? 'disabled' : ''}>반려</button>` : ''}${own && ['pending', 'rejected'].includes(record.status) ? `<button data-record="${h(record.id)}" data-kind="${kind}" data-action="delete" ${state.busy ? 'disabled' : ''}>삭제</button>` : ''}`
+  return `${record.status === 'approved' && isAdminOrLead() ? `<button data-record="${h(record.id)}" data-kind="${kind}" data-action="cancel" ${state.busy ? 'disabled' : ''}>승인 취소</button>` : ''}${record.status === 'pending' && isAdminOrLead() ? `<button data-record="${h(record.id)}" data-kind="${kind}" data-action="approve" ${state.busy ? 'disabled' : ''}>승인</button><button data-record="${h(record.id)}" data-kind="${kind}" data-action="reject" ${state.busy ? 'disabled' : ''}>반려</button>` : ''}${own && ['pending', 'rejected'].includes(record.status) ? `<button data-record="${h(record.id)}" data-kind="${kind}" data-action="delete" ${state.busy ? 'disabled' : ''}>삭제</button>` : ''}`
 }
 export function renderCompLeave() {
   const mine = state.summary[session.user?.userId]
   const name =
     state.members.find((member) => member.id === state.selected)?.name ?? ''
+  const available = mine ? Math.max(0, mine.balanceHours - mine.pendingLeaveHours) : null
   const draft = state.overtime
   return `<main class="management-page comp-leave-management"><div class="management-heading"><div><span class="eyebrow">COMPENSATORY LEAVE</span><h1>대체휴가 관리</h1><p>승인된 초과근무를 시간 단위로 적립하고, 휴가 사용 신청을 승인하면 차감합니다.</p></div><span>${isAdminOrLead() ? '관리자·팀장 검토 가능' : '본인 기록 작성'}</span></div>
     ${state.error ? `<div class="comp-api-error" role="alert">${h(state.error)} <button id="comp-retry">다시 조회</button></div>` : ''}
@@ -112,9 +117,9 @@ export function renderCompLeave() {
     <form id="overtime-form"><div class="comp-form-row two"><label>업무 일자<input data-overtime="date" type="date" required value="${h(draft.date)}"></label><label>업무 유형<select data-overtime="type">${types.map((type) => `<option ${type === draft.type ? 'selected' : ''}>${type}</option>`).join('')}</select></label></div>
     <label>고객사 또는 업무명<input data-overtime="customer" required maxlength="200" value="${h(draft.customer)}"></label><div class="comp-form-row time compact-time"><label>시작 시간${timeSelect('startTime', draft.startTime)}</label><label>종료 시간${timeSelect('endTime', draft.endTime)}</label><div class="calculated-hours"><span>산정 예상</span><strong id="calculated-hours">${calculateHours(draft.startTime, draft.endTime)}시간</strong></div></div><small>종료 시간이 시작보다 이르면 다음 날 종료로 계산합니다. 최종 시간은 서버에서 산정됩니다.</small>
     <label>업무 내용<textarea data-overtime="detail" required maxlength="4000">${h(draft.detail)}</textarea></label><label>관련 티켓·링크 (선택)<input data-overtime="evidence" maxlength="2000" value="${h(draft.evidence)}"></label><button class="primary" ${state.busy ? 'disabled' : ''}>초과근무 등록</button></form></section></div>
-    <section class="comp-register-panel"><header><h2>내 대체휴가 사용 신청</h2></header><p>4시간(반일) 또는 8시간(하루)으로 신청합니다. 승인 대기 신청을 제외한 잔여 시간 내에서만 접수됩니다.</p><form id="leave-form" class="holiday-form"><label>사용 날짜<input data-leave="date" type="date" required value="${h(state.leave.date)}"></label><label>사용 시간<select data-leave="hours" required><option value="">선택</option>${[4, 8].map((value) => `<option value="${value}" ${Number(state.leave.hours) === value ? 'selected' : ''}>${value}시간 (${value === 4 ? '반일' : '하루'})</option>`).join('')}</select></label><label>사유<input data-leave="reason" required maxlength="2000" value="${h(state.leave.reason)}"></label><button class="primary" ${state.busy ? 'disabled' : ''}>사용 신청</button></form></section>
-    <section class="comp-ledger"><header><h2>${h(name)} 초과근무 원장</h2></header><div class="comp-table-wrap"><table><thead><tr><th>업무 일자</th><th>유형</th><th>고객사/업무</th><th>시간</th><th>업무 내용</th><th>근거</th><th>상태</th><th>처리</th></tr></thead><tbody>${state.records.map((record) => `<tr><td>${h(record.date)}</td><td>${h(record.type)}</td><td>${h(record.customer)}<small>${h(record.startTime)}–${h(record.endTime)}</small></td><td>${hours(record.hours)}</td><td>${h(record.detail)}</td><td>${h(record.evidence || '—')}</td><td><span class="comp-status">${h(statusLabels[record.status] ?? record.status)}</span></td><td>${actions(record, 'overtime')}</td></tr>`).join('') || '<tr><td colspan="8">등록된 초과근무가 없습니다.</td></tr>'}</tbody></table></div></section>
-    <section class="comp-ledger"><header><h2>${h(name)} 대체휴가 사용 원장</h2></header><div class="comp-table-wrap"><table><thead><tr><th>사용 날짜</th><th>시간</th><th>사유</th><th>상태</th><th>처리</th></tr></thead><tbody>${state.leaves.map((record) => `<tr><td>${h(record.date)}</td><td>${hours(record.hours)}</td><td>${h(record.reason)}</td><td>${h(statusLabels[record.status] ?? record.status)}</td><td>${actions(record, 'leave')}</td></tr>`).join('') || '<tr><td colspan="5">등록된 사용 신청이 없습니다.</td></tr>'}</tbody></table></div></section></main>`
+    <section class="comp-register-panel"><header><h2>내 대체휴가 사용 신청</h2></header><p class="calendar-notice">내 신청 가능 시간: <strong data-testid="available-leave">${hours(available)}</strong> · 잔여 ${hours(mine?.balanceHours)} − 사용 승인 대기 ${hours(mine?.pendingLeaveHours)}</p><p>4시간(반일) 또는 8시간(하루)으로 신청합니다. 승인 대기 신청을 제외한 잔여 시간 내에서만 접수됩니다.</p><form id="leave-form" class="holiday-form"><label>사용 날짜<input data-leave="date" type="date" required value="${h(state.leave.date)}"></label><label>사용 시간<select data-leave="hours" required><option value="">선택</option>${[4, 8].map((value) => `<option value="${value}" ${Number(state.leave.hours) === value ? 'selected' : ''}>${value}시간 (${value === 4 ? '반일' : '하루'})</option>`).join('')}</select></label><label>사유<input data-leave="reason" required maxlength="2000" value="${h(state.leave.reason)}"></label><button class="primary" ${state.busy ? 'disabled' : ''}>사용 신청</button></form></section>
+    <section class="comp-ledger"><header><h2>${h(name)} 초과근무 원장</h2></header><div class="comp-table-wrap"><table><thead><tr><th>업무 일자</th><th>유형</th><th>고객사/업무</th><th>시간</th><th>업무 내용</th><th>근거</th><th>상태</th><th>처리</th></tr></thead><tbody>${state.records.map((record) => `<tr><td>${h(record.date)}</td><td>${h(record.type)}</td><td>${h(record.customer)}<small>${h(record.startTime)}–${h(record.endTime)}</small></td><td>${hours(record.hours)}</td><td>${h(record.detail)}</td><td>${h(record.evidence || '—')}</td><td><span class="comp-status">${h(statusLabels[record.status] ?? record.status)}</span>${cancellationInfo(record)}</td><td>${actions(record, 'overtime')}</td></tr>`).join('') || '<tr><td colspan="8">등록된 초과근무가 없습니다.</td></tr>'}</tbody></table></div></section>
+    <section class="comp-ledger"><header><h2>${h(name)} 대체휴가 사용 원장</h2></header><div class="comp-table-wrap"><table><thead><tr><th>사용 날짜</th><th>시간</th><th>사유</th><th>상태</th><th>처리</th></tr></thead><tbody>${state.leaves.map((record) => `<tr><td>${h(record.date)}</td><td>${hours(record.hours)}</td><td>${h(record.reason)}</td><td>${h(statusLabels[record.status] ?? record.status)}${cancellationInfo(record)}</td><td>${actions(record, 'leave')}</td></tr>`).join('') || '<tr><td colspan="5">등록된 사용 신청이 없습니다.</td></tr>'}</tbody></table></div></section></main>`
 }
 export function bindCompLeave(root, rerender) {
   if (state.busy)
@@ -204,10 +209,12 @@ export function bindCompLeave(root, rerender) {
     button.addEventListener('click', () => {
       const { record, kind, action } = button.dataset
       if (action === 'delete' && !confirm('이 신청을 삭제할까요?')) return
+      const reason = action === 'cancel' ? prompt('승인을 취소할 사유를 입력하세요. 원장과 취소 이력은 보존됩니다.') : null
+      if (action === 'cancel' && !reason?.trim()) return
       run(() =>
         api(
           `/api/${kind}/${encodeURIComponent(record)}${action === 'delete' ? '' : `/${action}`}`,
-          { method: action === 'delete' ? 'DELETE' : 'POST' },
+          { method: action === 'delete' ? 'DELETE' : 'POST', ...(action === 'cancel' ? { body: JSON.stringify({ reason: reason.trim() }) } : {}) },
         ),
       )
     }),

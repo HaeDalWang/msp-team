@@ -113,7 +113,14 @@ const state = {
   leftOpen: true,
   rightOpen: true,
   outputOpen: false,
-  commentDraft: '',
+  commentDrafts: {},
+  get commentDraft() { return this.commentDrafts[`${this.reviewEnd}:${this.selectedName}`] ?? '' },
+  set commentDraft(value) {
+    const key = `${this.reviewEnd}:${this.selectedName}`
+    if (value) this.commentDrafts[key] = value
+    else delete this.commentDrafts[key]
+  },
+  compactCommentsOpen: false,
   commentList: [],
   workHighlightsDraft: '',
   actionItemsDraft: '',
@@ -204,11 +211,12 @@ async function ensureReviewEntries() {
     state.entries = entries
     state.personalEntry = personal[0]
     state.entriesLoaded = true
+    const visibleEntries = filteredEntries()
     if (
       !state.selectedName ||
-      !entries.some((entry) => entry.id === state.selectedName)
+      !visibleEntries.some((entry) => entry.id === state.selectedName)
     )
-      state.selectedName = entries.find((entry) => entry.id === authState.user?.userId)?.id ?? entries[0]?.id ?? null
+      state.selectedName = visibleEntries.find((entry) => entry.id === authState.user?.userId)?.id ?? visibleEntries[0]?.id ?? null
     if (!state.dirty) hydrateDraft()
     render()
     await loadComments()
@@ -269,7 +277,6 @@ function confirmDiscard() {
 async function changeWeek(week) {
   if (!confirmDiscard()) return
   state.dirty = false
-  state.commentDraft = ''
   state.reviewEnd = week
   state.dateOpen = false
   state.outputOpen = false
@@ -357,7 +364,7 @@ function topbar() {
     <nav class="view-tabs" aria-label="주요 화면">
       ${tabs.map(([id, iconName, label]) => `<button data-view="${id}" class="${state.view === id ? 'active' : ''}">${icon(iconName, 16)} ${label}</button>`).join('')}
     </nav>
-    <label class="searchbox">${icon('Search', 16)}<input id="query-input" value="${escapeAttr(state.query)}" placeholder="고객사 · 엔지니어 · 키워드"><kbd>/</kbd></label>
+    ${['review', 'dashboard'].includes(state.view) ? `<label class="searchbox">${icon('Search', 16)}<input id="query-input" value="${escapeAttr(state.query)}" aria-label="선택한 주의 회고 검색" placeholder="이번 주 회고 · 이름 검색"><kbd>/</kbd></label>` : ''}
     <div class="settings-menu">
       <button class="icon-button" id="settings-toggle" aria-label="설정" aria-expanded="${state.settingsOpen}">${icon('Settings', 17)}</button>
       ${
@@ -452,6 +459,7 @@ function leaveNotice(entry) {
 }
 
 function reviewView() {
+  if (!filteredEntries().length) return '<main class="all-reviews"><p>표시할 회고가 없습니다. 검색어 또는 주차를 확인해 주세요.</p></main>'
   if (state.reviewMode === 'all') return `<main class="all-reviews">${filteredEntries().map((entry) => `<article class="all-review-card"><header><h1>${escapeHtml(entry.name)}</h1><span class="part-badge">${escapeHtml(entry.part)}</span>${statusBadge(entry.status)}<button data-open-review="${escapeAttr(entry.id)}">상세·코멘트</button></header>${leaveNotice(entry)}<p class="all-ticket-summary">신규 ${entry.tickets[0]} · 진행 중 ${entry.tickets[1]} · 종료 ${entry.tickets[2]}</p>${reviewFields.map((field, index) => `<section><h2>${['주요 업무 현황', '주요 계획 / Action Item', '프로젝트/과제 현황(TOPS)', '기타 사항'][index]}</h2><p>${escapeHtml(entry.raw?.[field] || '작성된 내용 없음')}</p></section>`).join('')}</article>`).join('') || '<p>표시할 회고가 없습니다.</p>'}</main>`
   const selected = selectedEntry() ??
     state.entries[0] ?? {
@@ -522,6 +530,7 @@ function reviewView() {
     sections.some((section) => section.items.length > 0)
 
   const content = `<section class="review-content">
+    <nav class="presentation-nav" aria-label="발표자 이동"><button data-review-step="-1" ${people.findIndex((entry) => entry.id === selected.id) <= 0 ? 'disabled' : ''}>이전 사람</button><label><span class="sr-only">발표자 선택</span><select id="review-person-select" aria-label="발표자 선택">${people.map((entry) => `<option value="${escapeAttr(entry.id)}" ${entry.id === selected.id ? 'selected' : ''}>${escapeHtml(entry.name)} · ${escapeHtml(entry.part ?? '무소속')}</option>`).join('')}</select></label><span class="presentation-position">${Math.max(0, people.findIndex((entry) => entry.id === selected.id) + 1)} / ${people.length}</span><button data-review-step="1" ${people.findIndex((entry) => entry.id === selected.id) >= people.length - 1 ? 'disabled' : ''}>다음 사람</button><button id="review-comments-toggle" aria-expanded="${state.compactCommentsOpen}" >코멘트 ${state.compactCommentsOpen ? '닫기' : '보기'}</button></nav>
     <div class="person-header">
       <div class="person-identity"><h1>${escapeHtml(selected.name)}</h1><span class="part-badge">${escapeHtml(selected.part)}</span>${statusBadge(selected.status)}</div>
       <div class="ticket-chips">${['신규', '진행 중', '종료'].map((label, index) => `<div class="ticket-chip ticket-${index}"><span>${label}</span><strong>${selected.tickets[index]}</strong><small>${previous ? delta(selected.tickets[index], previous.tickets[index]) : '—'}</small></div>`).join('')}</div>
@@ -563,7 +572,7 @@ function reviewView() {
     ${state.leftOpen ? rail : ''}
     ${!state.leftOpen ? `<button class="panel-reopen left" id="left-open">${icon('Users', 17)} 엔지니어</button>` : ''}
     ${content}
-    ${state.rightOpen ? panel : ''}
+    ${state.rightOpen || state.compactCommentsOpen ? panel.replace('class="review-panel"', `class="review-panel ${state.compactCommentsOpen ? 'compact-open' : ''}"`) : ''}
     ${!state.rightOpen ? `<button class="panel-reopen right" id="right-open">${icon('MessageSquareText', 17)} 코멘트</button>` : ''}
   </main>`
 }
@@ -774,7 +783,7 @@ async function switchView(view) {
 }
 
 window.addEventListener('beforeunload', (event) => {
-  if (state.dirty || state.saving || state.profileBusy || (state.profile && JSON.stringify(state.profile) !== state.profileSaved) || managementDrafts[state.view]?.[0]()) {
+  if (state.dirty || state.saving || state.commentBusy || Object.values(state.commentDrafts).some((text) => text.trim()) || state.profileBusy || (state.profile && JSON.stringify(state.profile) !== state.profileSaved) || managementDrafts[state.view]?.[0]()) {
     event.preventDefault()
     event.returnValue = ''
   }
@@ -793,6 +802,21 @@ document.addEventListener('click', () => {
 })
 
 function bindEvents(root) {
+  const choosePerson = (id) => {
+    state.selectedName = id
+    loadComments()
+    render()
+  }
+  root.querySelector('#review-person-select')?.addEventListener('change', (event) => choosePerson(event.target.value))
+  root.querySelectorAll('[data-review-step]').forEach((button) => button.addEventListener('click', () => {
+    const people = filteredEntries()
+    const next = people[people.findIndex((entry) => entry.id === state.selectedName) + Number(button.dataset.reviewStep)]
+    if (next) choosePerson(next.id)
+  }))
+  root.querySelector('#review-comments-toggle')?.addEventListener('click', () => {
+    state.compactCommentsOpen = !state.compactCommentsOpen
+    render()
+  })
   root.querySelector('#profile-open')?.addEventListener('click', async () => {
     if (state.profileBusy || (state.profile && !confirm('입력한 내용을 서버의 정보로 다시 불러올까요?'))) return
     state.profileBusy = true
@@ -829,7 +853,6 @@ function bindEvents(root) {
   root.querySelectorAll('[data-open-review]').forEach((button) => button.addEventListener('click', () => {
     state.reviewMode = 'single'
     state.selectedName = button.dataset.openReview
-    state.commentDraft = ''
     loadComments()
     render()
   }))
@@ -860,6 +883,11 @@ function bindEvents(root) {
     )
   root.querySelector('#query-input')?.addEventListener('input', (event) => {
     state.query = event.target.value
+    const people = filteredEntries()
+    if (!people.some((entry) => entry.id === state.selectedName)) {
+      state.selectedName = people[0]?.id ?? null
+      loadComments()
+    }
     render()
     root.querySelector('#query-input')?.focus()
   })
@@ -966,6 +994,7 @@ function bindEvents(root) {
   })
   root.querySelector('#right-close')?.addEventListener('click', () => {
     state.rightOpen = false
+    state.compactCommentsOpen = false
     render()
   })
   root.querySelector('#right-open')?.addEventListener('click', () => {
@@ -975,7 +1004,6 @@ function bindEvents(root) {
   root.querySelectorAll('[data-person]').forEach((btn) =>
     btn.addEventListener('click', () => {
       state.selectedName = btn.dataset.person
-      state.commentDraft = ''
       loadComments()
       render()
     }),
@@ -983,7 +1011,6 @@ function bindEvents(root) {
   root.querySelectorAll('[data-goto-person]').forEach((btn) =>
     btn.addEventListener('click', () => {
       state.selectedName = btn.dataset.gotoPerson
-      state.commentDraft = ''
       switchView('review')
       loadComments()
     }),
@@ -1001,6 +1028,7 @@ function bindEvents(root) {
     .querySelector('#comment-add')
     ?.addEventListener('click', async (event) => {
       const text = state.commentDraft.trim()
+      const draftKey = `${state.reviewEnd}:${state.selectedName}`
       const id = selectedEntry()?.reviewId
       if (!text || !id || state.commentBusy) return
       state.commentBusy = true
@@ -1010,8 +1038,8 @@ function bindEvents(root) {
           method: 'POST',
           body: JSON.stringify({ body: text }),
         })
+        if (state.commentDrafts[draftKey]?.trim() === text) delete state.commentDrafts[draftKey]
         if (id === selectedEntry()?.reviewId) {
-          if (state.commentDraft.trim() === text) state.commentDraft = ''
           await loadComments()
         }
         showToast('코멘트를 등록했습니다.')

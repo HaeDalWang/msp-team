@@ -38,6 +38,12 @@ CREATE TABLE IF NOT EXISTS holidays (holiday_date date PRIMARY KEY, name text NO
 ALTER TABLE overtime_records ADD COLUMN IF NOT EXISTS decided_by text REFERENCES users(id);
 ALTER TABLE overtime_records ADD COLUMN IF NOT EXISTS decided_at timestamptz;
 CREATE TABLE IF NOT EXISTS leave_requests (id bigserial PRIMARY KEY, user_id text NOT NULL REFERENCES users(id), leave_date date NOT NULL, hours numeric NOT NULL CHECK(hours > 0), reason text NOT NULL, status text NOT NULL DEFAULT 'pending', created_at timestamptz NOT NULL DEFAULT now(), decided_by text REFERENCES users(id), decided_at timestamptz);
+ALTER TABLE overtime_records ADD COLUMN IF NOT EXISTS cancellation_reason text;
+ALTER TABLE overtime_records ADD COLUMN IF NOT EXISTS cancelled_by text REFERENCES users(id);
+ALTER TABLE overtime_records ADD COLUMN IF NOT EXISTS cancelled_at timestamptz;
+ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancellation_reason text;
+ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancelled_by text REFERENCES users(id);
+ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS cancelled_at timestamptz;
 `
 
 export async function migrate(pool) {
