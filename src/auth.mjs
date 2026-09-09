@@ -88,7 +88,7 @@ export async function syncSlackProfileDefaults(pool, env, identity) {
   }
   const email = identity.emailVerified && validEmail(identity.email)
     ? identity.email.trim()
-    : ''
+    : validEmail(profile.email) ? profile.email.trim() : ''
   const phone = typeof profile.phone === 'string' && profile.phone.length <= 100
     ? profile.phone.trim()
     : ''

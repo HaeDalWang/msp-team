@@ -12,7 +12,7 @@ test('Slack profile fills only blank contact and start-date defaults', async (t)
     profile: { phone: '010-1234-5678', start_date: '2022-01-10' },
   }
   t.mock.method(globalThis, 'fetch', async (url, options) => {
-    assert.equal(String(url), 'https://slack.com/api/users.profile.get?user=UUSER')
+    assert.ok(['UUSER', 'UOTHER'].includes(new URL(url).searchParams.get('user')))
     assert.equal(options.headers.authorization, 'Bearer xoxb-test-profile-token')
     return new Response(JSON.stringify(response))
   })
@@ -32,6 +32,13 @@ test('Slack profile fills only blank contact and start-date defaults', async (t)
   })
   saved = (await pool.query("SELECT email,phone,joined_on FROM users WHERE id='user'")).rows[0]
   assert.deepEqual(saved, { email: 'mine@example.com', phone: '내 번호', joined_on: '2020-03-02' })
+
+  response = { ok: true, profile: { email: 'other@example.com', phone: '010-0000-0000', start_date: '' } }
+  await syncSlackProfileDefaults(pool, env, {
+    userId: 'other', slackUserId: 'UOTHER', email: '', emailVerified: false,
+  })
+  saved = (await pool.query("SELECT email,phone,joined_on FROM users WHERE id='other'")).rows[0]
+  assert.deepEqual(saved, { email: 'other@example.com', phone: '010-0000-0000', joined_on: null })
 })
 
 test('Slack profile failure does not block verified email default', async (t) => {
