@@ -5,7 +5,7 @@
     { "id": "dragon", "name": "Dragon", "color": "#986ce3" }
   ],
   "users": [
-    { "id": "jo-wonkeun", "name": "조원근", "part": null, "role": "lead", "slackUserId": "U5SSTMDGE" },
+    { "id": "jo-wonkeun", "name": "조원근", "part": null, "role": "admin", "slackUserId": "U5SSTMDGE" },
     { "id": "lee-juyeop", "name": "이주엽", "part": "Leaf", "slackUserId": "U01HU325LF5" },
     { "id": "jeong-janghun", "name": "정장훈", "part": "Leaf", "slackUserId": "U04JKV9C7KR" },
     { "id": "kim-ihyeon", "name": "김이현", "part": "Leaf", "slackUserId": "U064BVBDZJN" },
