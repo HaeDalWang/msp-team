@@ -372,7 +372,7 @@ function topbar() {
           ? `<div class="settings-popover">
         <div class="settings-user"><span class="current-user-chip">${icon('User', 15)} ${escapeHtml(authState.user?.name ?? '')}</span></div>
         <button id="profile-open" ${state.profileBusy ? 'disabled' : ''}>내 정보 ${state.profile ? '다시 불러오기' : '수정'}</button>
-        ${state.profile ? `<form id="profile-form"><label>이메일<input id="profile-email" type="email" maxlength="254" value="${escapeAttr(state.profile.email)}" ${state.profileBusy ? 'disabled' : ''}></label><label>입사일<input id="profile-joined" type="date" value="${escapeAttr(state.profile.joinedOn ?? '')}" ${state.profileBusy ? 'disabled' : ''}></label><small>입사일은 회고 발표 순서에 반영됩니다.</small><button type="submit" class="primary" ${state.profileBusy ? 'disabled' : ''}>${state.profileBusy ? '저장 중…' : '내 정보 저장'}</button></form>` : ''}
+        ${state.profile ? `<form id="profile-form"><label>이메일<input id="profile-email" type="email" maxlength="254" autocomplete="email" value="${escapeAttr(state.profile.email)}" ${state.profileBusy ? 'disabled' : ''}></label><label>전화번호<input id="profile-phone" type="tel" maxlength="100" autocomplete="tel" value="${escapeAttr(state.profile.phone ?? '')}" ${state.profileBusy ? 'disabled' : ''}></label><label>입사일<input id="profile-joined" type="date" value="${escapeAttr(state.profile.joinedOn ?? '')}" ${state.profileBusy ? 'disabled' : ''}></label><small>빈 값은 다음 Slack 로그인 때 연락처와 Slack에서 제공되는 Start Date로 채웁니다. 직접 저장한 값은 덮어쓰지 않습니다.</small><button type="submit" class="primary" ${state.profileBusy ? 'disabled' : ''}>${state.profileBusy ? '저장 중…' : '내 정보 저장'}</button></form>` : ''}
         ${state.profileMessage ? `<p role="status" class="profile-message">${escapeHtml(state.profileMessage)}</p>` : ''}
         <button id="theme-toggle">${icon(state.light ? 'Moon' : 'Sun', 16)} ${state.light ? '다크 모드' : '라이트 모드'}</button>
         <div class="settings-font-scale">
@@ -829,7 +829,7 @@ function bindEvents(root) {
     catch (error) { state.profileMessage = error.message }
     finally { state.profileBusy = false; render() }
   })
-  for (const [id, field] of [['profile-email', 'email'], ['profile-joined', 'joinedOn']])
+  for (const [id, field] of [['profile-email', 'email'], ['profile-phone', 'phone'], ['profile-joined', 'joinedOn']])
     root.querySelector(`#${id}`)?.addEventListener('input', (event) => { state.profile[field] = event.target.value })
   root.querySelector('#profile-form')?.addEventListener('submit', async (event) => {
     event.preventDefault()

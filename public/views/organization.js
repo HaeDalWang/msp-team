@@ -55,7 +55,7 @@ function memberForm() {
     <label>이름<input data-member-field="name" required maxlength="100" value="${h(draft.name)}"></label>
     <label>Slack 사용자 ID<input data-member-field="slackUserId" required pattern="[UW][A-Z0-9]+" title="Slack 프로필의 멤버 ID를 입력하세요" value="${h(draft.slackUserId ?? '')}"><small>Slack 프로필 → 더 보기 → 멤버 ID 복사</small></label>
     <label>입사일<input data-member-field="joinedOn" type="date" value="${h(draft.joinedOn ?? '')}"><small>빠른 입사일 순으로 발표합니다. 미등록자는 뒤에 표시됩니다.</small></label>
-    <label>이메일<input data-member-field="email" type="email" value="${h(draft.email ?? '')}"></label>
+    <label>이메일<input data-member-field="email" type="email" value="${h(draft.email ?? '')}"></label><label>전화번호<input data-member-field="phone" type="tel" maxlength="100" value="${h(draft.phone ?? '')}"></label>
     <label>파트<select data-member-field="partId"><option value="">무소속</option>${state.parts.map((part) => `<option value="${h(part.id)}" ${part.id === draft.partId ? 'selected' : ''}>${h(part.name)}</option>`).join('')}</select></label>
     <label>역할<select data-member-field="role">${Object.entries(roles)
       .map(
@@ -80,7 +80,7 @@ export function renderOrganization() {
         const members = state.members.filter(
           (member) => (member.partId ?? null) === part.id,
         )
-        return `<section class="org-column"><header><h2>${h(part.name)}</h2><span>${members.length}명</span></header><div class="member-list">${members.map((member) => `<article class="member-card"><div class="member-avatar">${h(member.name.slice(-1))}</div><div class="member-info"><div><h3>${h(member.name)}</h3><span>${h(roles[member.role] ?? member.role)}${member.active === false ? ' · 비활성' : ''}</span></div><p>${h(member.email || '이메일 미등록')}</p><small>입사일 ${h(member.joinedOn || '미등록')} · ${h(member.workStart ?? '')}–${h(member.workEnd ?? '')}</small></div>${canEdit ? `<button data-edit-member="${h(member.userId)}" ${state.busy ? 'disabled' : ''}>수정</button>` : ''}</article>`).join('') || '<p>구성원이 없습니다.</p>'}</div></section>`
+        return `<section class="org-column"><header><h2>${h(part.name)}</h2><span>${members.length}명</span></header><div class="member-list">${members.map((member) => `<article class="member-card"><div class="member-avatar">${h(member.name.slice(-1))}</div><div class="member-info"><div><h3>${h(member.name)}</h3><span>${h(roles[member.role] ?? member.role)}${member.active === false ? ' · 비활성' : ''}</span></div><p>${h(member.email || '이메일 미등록')} · ${h(member.phone || '전화번호 미등록')}</p><small>입사일 ${h(member.joinedOn || '미등록')} · ${h(member.workStart ?? '')}–${h(member.workEnd ?? '')}</small></div>${canEdit ? `<button data-edit-member="${h(member.userId)}" ${state.busy ? 'disabled' : ''}>수정</button>` : ''}</article>`).join('') || '<p>구성원이 없습니다.</p>'}</div></section>`
       })
       .join('')}</div></main>`
 }

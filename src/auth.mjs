@@ -60,6 +60,50 @@ function cookie(name, value, age, env) {
   return `${name}=${value}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${age}${secure ? '; Secure' : ''}`
 }
 
+const validEmail = (value) =>
+  typeof value === 'string' &&
+  value.length <= 254 &&
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+const validDate = (value) =>
+  typeof value === 'string' &&
+  /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+  Number.isFinite(Date.parse(value)) &&
+  new Date(value).toISOString().slice(0, 10) === value
+
+export async function syncSlackProfileDefaults(pool, env, identity) {
+  let profile = {}
+  if (env.SLACK_PROFILE_TOKEN) {
+    try {
+      const url = new URL('https://slack.com/api/users.profile.get')
+      url.searchParams.set('user', identity.slackUserId)
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(5000),
+        headers: { authorization: `Bearer ${env.SLACK_PROFILE_TOKEN}` },
+      })
+      const result = await response.json()
+      if (response.ok && result.ok && result.profile) profile = result.profile
+    } catch {
+      // Optional defaults must never prevent an otherwise valid Slack login.
+    }
+  }
+  const email = identity.emailVerified && validEmail(identity.email)
+    ? identity.email.trim()
+    : ''
+  const phone = typeof profile.phone === 'string' && profile.phone.length <= 100
+    ? profile.phone.trim()
+    : ''
+  const joinedOn = validDate(profile.start_date) ? profile.start_date : ''
+  await pool.query(
+    `UPDATE users SET
+       email=CASE WHEN email='' AND $2<>'' THEN $2 ELSE email END,
+       phone=CASE WHEN phone='' AND $3<>'' THEN $3 ELSE phone END,
+       joined_on=CASE WHEN joined_on IS NULL AND $4<>'' THEN $4::date ELSE joined_on END,
+       version=version+CASE WHEN (email='' AND $2<>'') OR (phone='' AND $3<>'') OR (joined_on IS NULL AND $4<>'') THEN 1 ELSE 0 END
+     WHERE id=$1`,
+    [identity.userId, email, phone, joinedOn],
+  )
+}
+
 // Refresh identity and permissions from the DB on every request, including revoked accounts.
 export function requireSession(env, pool) {
   return async (request, response, next) => {
@@ -185,6 +229,12 @@ export function registerAuthRoutes(app, pool, env) {
             .send(
               '사전 등록된 활성 MSP 사용자가 아닙니다. 관리자에게 등록을 요청하세요.',
             )
+        await syncSlackProfileDefaults(pool, env, {
+          userId: rows[0].id,
+          slackUserId: payload.sub,
+          email: payload.email,
+          emailVerified: payload.email_verified === true,
+        })
         const token = createSessionToken(
           { userId: rows[0].id, exp: Date.now() + SESSION_AGE * 1000 },
           env.SESSION_SECRET,

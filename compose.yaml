@@ -15,6 +15,7 @@ services:
       SLACK_REDIRECT_URI: ${SLACK_REDIRECT_URI:-http://localhost:3000/auth/slack/callback}
       SESSION_SECRET: ${SESSION_SECRET}
       ALLOWED_SLACK_TEAM_ID: ${ALLOWED_SLACK_TEAM_ID:-}
+      SLACK_PROFILE_TOKEN: ${SLACK_PROFILE_TOKEN:-}
     volumes:
       - ./seed.json:/app/seed.json:ro
     ports:

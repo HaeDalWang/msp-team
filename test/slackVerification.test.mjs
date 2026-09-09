@@ -2,6 +2,48 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { generateKeyPair, exportJWK, SignJWT } from 'jose'
 import { fixture } from './fixtures.mjs'
+import { syncSlackProfileDefaults } from '../src/auth.mjs'
+
+test('Slack profile fills only blank contact and start-date defaults', async (t) => {
+  const { pool, env } = await fixture(t)
+  env.SLACK_PROFILE_TOKEN = 'xoxb-test-profile-token'
+  let response = {
+    ok: true,
+    profile: { phone: '010-1234-5678', start_date: '2022-01-10' },
+  }
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(String(url), 'https://slack.com/api/users.profile.get?user=UUSER')
+    assert.equal(options.headers.authorization, 'Bearer xoxb-test-profile-token')
+    return new Response(JSON.stringify(response))
+  })
+  await syncSlackProfileDefaults(pool, env, {
+    userId: 'user',
+    slackUserId: 'UUSER',
+    email: 'slack@example.com',
+    emailVerified: true,
+  })
+  let saved = (await pool.query("SELECT email,phone,joined_on FROM users WHERE id='user'")).rows[0]
+  assert.deepEqual(saved, { email: 'slack@example.com', phone: '010-1234-5678', joined_on: '2022-01-10' })
+
+  await pool.query("UPDATE users SET email='mine@example.com',phone='내 번호',joined_on='2020-03-02' WHERE id='user'")
+  response = { ok: true, profile: { phone: '바뀐 번호', start_date: '2024-04-01' } }
+  await syncSlackProfileDefaults(pool, env, {
+    userId: 'user', slackUserId: 'UUSER', email: 'changed@example.com', emailVerified: true,
+  })
+  saved = (await pool.query("SELECT email,phone,joined_on FROM users WHERE id='user'")).rows[0]
+  assert.deepEqual(saved, { email: 'mine@example.com', phone: '내 번호', joined_on: '2020-03-02' })
+})
+
+test('Slack profile failure does not block verified email default', async (t) => {
+  const { pool, env } = await fixture(t)
+  env.SLACK_PROFILE_TOKEN = 'xoxb-test-profile-token'
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ ok: false, error: 'temporary_failure' })))
+  await syncSlackProfileDefaults(pool, env, {
+    userId: 'user', slackUserId: 'UUSER', email: 'verified@example.com', emailVerified: true,
+  })
+  const saved = (await pool.query("SELECT email,phone,joined_on FROM users WHERE id='user'")).rows[0]
+  assert.deepEqual(saved, { email: 'verified@example.com', phone: '', joined_on: null })
+})
 
 test('Slack callback verifies signature, audience, expiry and nonce before creating session', async (t) => {
   const { base, env, request } = await fixture(t)

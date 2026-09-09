@@ -64,6 +64,8 @@ function userFields(body) {
     if (fields.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.email))
       v.fail(400, '이메일 형식을 확인하세요.')
   }
+  if (has(body, 'phone'))
+    fields.phone = v.text(body.phone, '전화번호', { required: false, max: 100 })
   if (has(body, 'workStart')) fields.work_start = v.time(body.workStart)
   if (has(body, 'workEnd')) fields.work_end = v.time(body.workEnd)
   return fields
@@ -174,15 +176,15 @@ export function createApp(pool, env = process.env) {
   })
 
   app.get('/api/profile', async (req, res) => {
-    const { rows } = await pool.query('SELECT email,joined_on AS "joinedOn",version FROM users WHERE id=$1', [req.session.userId])
+    const { rows } = await pool.query('SELECT email,phone,joined_on AS "joinedOn",version FROM users WHERE id=$1', [req.session.userId])
     res.json(rows[0])
   })
   app.put('/api/profile', async (req, res) => {
-    if (Object.keys(req.body).some((key) => !['email', 'joinedOn', 'version'].includes(key)))
-      v.fail(400, '내 정보에서는 이메일과 입사일만 수정할 수 있습니다.')
+    if (Object.keys(req.body).some((key) => !['email', 'phone', 'joinedOn', 'version'].includes(key)))
+      v.fail(400, '내 정보에서는 이메일, 전화번호와 입사일만 수정할 수 있습니다.')
     const version = v.integer(req.body.version, 'version')
-    const fields = userFields({ email: req.body.email, joinedOn: req.body.joinedOn })
-    const { rows } = await pool.query('UPDATE users SET email=$1,joined_on=$2,version=version+1 WHERE id=$3 AND version=$4 RETURNING email,joined_on AS "joinedOn",version', [fields.email, fields.joined_on, req.session.userId, version])
+    const fields = userFields({ email: req.body.email, phone: req.body.phone, joinedOn: req.body.joinedOn })
+    const { rows } = await pool.query('UPDATE users SET email=$1,phone=$2,joined_on=$3,version=version+1 WHERE id=$4 AND version=$5 RETURNING email,phone,joined_on AS "joinedOn",version', [fields.email, fields.phone, fields.joined_on, req.session.userId, version])
     if (!rows.length) v.fail(409, '다른 곳에서 프로필이 변경되었습니다. 다시 불러온 후 저장하세요.')
     res.json(rows[0])
   })
@@ -463,7 +465,7 @@ export function createApp(pool, env = process.env) {
       'SELECT id,name,color,sort_order AS "sortOrder" FROM parts ORDER BY sort_order,name',
     )
     const people = await pool.query(
-      'SELECT id,name,part_id,role,version,email,work_start,work_end,slack_user_id,active,joined_on FROM users ORDER BY joined_on NULLS LAST,name,id',
+      'SELECT id,name,part_id,role,version,email,phone,work_start,work_end,slack_user_id,active,joined_on FROM users ORDER BY joined_on NULLS LAST,name,id',
     )
     res.json({
       parts: parts.rows,
@@ -476,6 +478,7 @@ export function createApp(pool, env = process.env) {
             role: u.role,
             version: u.version,
             email: u.email,
+            phone: u.phone,
             workStart: String(u.work_start).slice(0, 5),
             workEnd: String(u.work_end).slice(0, 5),
             active: u.active,
