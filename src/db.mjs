@@ -24,7 +24,11 @@ ALTER TABLE customers ADD COLUMN IF NOT EXISTS services text[] NOT NULL DEFAULT 
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS tier text NOT NULL DEFAULT 'Standard';
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS mcr boolean NOT NULL DEFAULT false;
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS key_account boolean NOT NULL DEFAULT false;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS archived_at timestamptz;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS archived_by text REFERENCES users(id);
 CREATE TABLE IF NOT EXISTS customer_assignments (customer_id bigint NOT NULL REFERENCES customers(id) ON DELETE CASCADE, user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(customer_id, user_id));
+CREATE TABLE IF NOT EXISTS customer_history (id bigserial PRIMARY KEY, customer_id bigint NOT NULL REFERENCES customers(id) ON DELETE CASCADE, event_date date NOT NULL, body text NOT NULL CHECK(length(trim(body)) BETWEEN 1 AND 1000), author_id text NOT NULL REFERENCES users(id), created_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS reviews (id bigserial PRIMARY KEY, user_id text NOT NULL REFERENCES users(id), week_end date NOT NULL, work_highlights text NOT NULL DEFAULT '', action_items text NOT NULL DEFAULT '', tops_projects text NOT NULL DEFAULT '', other_notes text NOT NULL DEFAULT '', status text NOT NULL DEFAULT 'draft', UNIQUE(user_id, week_end));
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS tickets_new integer NOT NULL DEFAULT 0;
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS tickets_in_progress integer NOT NULL DEFAULT 0;

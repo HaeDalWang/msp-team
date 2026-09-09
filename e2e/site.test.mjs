@@ -258,6 +258,25 @@ test('browser customer edit, transfer, dynamic part and schedule note persistenc
   await expect(page.locator('.managed-customer-card')).toContainText(
     '브라우저 고객사',
   )
+  await page.locator('.customer-history summary').click()
+  await page.locator('[data-history-body]').fill('MSP 일시 중단')
+  await page.locator('[data-history-form] button.primary').click()
+  await expect(page.locator('.customer-history-list')).toContainText(
+    'MSP 일시 중단',
+  )
+  await page.screenshot({
+    path: '/tmp/msp-customer-history.png',
+    fullPage: true,
+  })
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: '운영 종료' }).click()
+  await expect(page.locator('.managed-customer-card')).toHaveCount(0)
+  await page.getByRole('button', { name: '종료 고객' }).click()
+  await expect(page.locator('.managed-customer-card')).toContainText(
+    '브라우저 고객사',
+  )
+  await page.getByRole('button', { name: '운영 재개' }).click()
+  await page.getByRole('button', { name: '운영 중' }).click()
   await page.locator('[data-edit-customer]').click()
   await page.locator('[data-draft="name"]').fill('수정 고객사')
   await page.locator('#customer-form button.primary').click()

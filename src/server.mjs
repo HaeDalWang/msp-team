@@ -36,6 +36,13 @@ const calendarDate = (value) =>
   value instanceof Date
     ? `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
     : value
+const seoulToday = () =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
 const has = (obj, key) => Object.hasOwn(obj, key)
 
 async function activeUser(db, id) {
@@ -303,6 +310,9 @@ export function createApp(pool, env = process.env) {
     const assignments = await pool.query(
       'SELECT ca.user_id,c.* FROM customer_assignments ca JOIN customers c ON c.id=ca.customer_id ORDER BY c.name',
     )
+    const histories = await pool.query(
+      'SELECT h.id,h.customer_id,h.event_date,h.body,h.author_id,h.created_at,u.name AS author_name FROM customer_history h JOIN users u ON u.id=h.author_id ORDER BY h.event_date DESC,h.created_at DESC,h.id DESC',
+    )
     res.json({
       owners: users.rows.map((u) => ({
         userId: u.id,
@@ -318,6 +328,20 @@ export function createApp(pool, env = process.env) {
             mcr: c.mcr,
             keyAccount: c.key_account,
             note: c.note,
+            active: c.active,
+            history: histories.rows
+              .filter(
+                (history) =>
+                  String(history.customer_id) === String(c.id),
+              )
+              .map((history) => ({
+                id: history.id,
+                eventDate: calendarDate(history.event_date),
+                body: history.body,
+                authorId: history.author_id,
+                authorName: history.author_name,
+                createdAt: history.created_at,
+              })),
           })),
       })),
     })
@@ -382,7 +406,63 @@ export function createApp(pool, env = process.env) {
     })
     res.status(204).end()
   })
-  app.delete('/api/customers/:id', async (req, res) => {
+  app.post('/api/customers/:id/history', async (req, res) => {
+    const eventDate = v.date(req.body.eventDate)
+    const body = v.text(req.body.body, '히스토리 내용', { max: 1000 })
+    const result = await pool.query(
+      'INSERT INTO customer_history(customer_id,event_date,body,author_id) SELECT id,$2,$3,$4 FROM customers WHERE id=$1 RETURNING id',
+      [req.params.id, eventDate, body, req.session.userId],
+    )
+    if (!result.rowCount) v.fail(404, '고객사를 찾을 수 없습니다.')
+    res.status(201).json({ id: result.rows[0].id })
+  })
+  app.delete('/api/customers/:customerId/history/:historyId', async (req, res) => {
+    const history = await pool.query(
+      'SELECT author_id FROM customer_history WHERE id=$1 AND customer_id=$2',
+      [req.params.historyId, req.params.customerId],
+    )
+    if (!history.rowCount) v.fail(404, '히스토리를 찾을 수 없습니다.')
+    if (
+      history.rows[0].author_id !== req.session.userId &&
+      req.session.role !== 'admin'
+    )
+      v.fail(403, '본인이 작성한 히스토리만 삭제할 수 있습니다.')
+    await pool.query('DELETE FROM customer_history WHERE id=$1', [
+      req.params.historyId,
+    ])
+    res.status(204).end()
+  })
+  app.put('/api/customers/:id/status', async (req, res) => {
+    const active = v.bool(req.body.active)
+    await transaction(pool, async (db) => {
+      const current = await db.query(
+        'SELECT active FROM customers WHERE id=$1 FOR UPDATE',
+        [req.params.id],
+      )
+      if (!current.rowCount) v.fail(404, '고객사를 찾을 수 없습니다.')
+      if (current.rows[0].active === active) return
+      await db.query(
+        'UPDATE customers SET active=$1,archived_at=$2,archived_by=$3 WHERE id=$4',
+        [
+          active,
+          active ? null : new Date(),
+          active ? null : req.session.userId,
+          req.params.id,
+        ],
+      )
+      await db.query(
+        'INSERT INTO customer_history(customer_id,event_date,body,author_id) VALUES($1,$2,$3,$4)',
+        [
+          req.params.id,
+          seoulToday(),
+          active ? '운영 재개' : '운영 종료',
+          req.session.userId,
+        ],
+      )
+    })
+    res.status(204).end()
+  })
+  app.delete('/api/customers/:id', adminOnly, async (req, res) => {
     const result = await pool.query('DELETE FROM customers WHERE id=$1', [
       req.params.id,
     ])

@@ -5,6 +5,7 @@ import {
   loadCustomers,
   renderCustomers,
   bindCustomers,
+  discardCustomers,
 } from '../public/views/customers.js'
 import {
   daysInMonth,
@@ -49,6 +50,7 @@ test.beforeEach(() => {
   globalThis.window = {}
 })
 test.afterEach(() => {
+  discardCustomers()
   delete globalThis.window
 })
 
@@ -72,7 +74,22 @@ test('all management views use escaped live data and dynamically include new par
             name: hostile,
             part: '새로운 파트',
             customers: [
-              { id: 'c1', name: hostile, tier: hostile, note: hostile },
+              {
+                id: 'c1',
+                name: hostile,
+                tier: hostile,
+                note: hostile,
+                active: true,
+                history: [
+                  {
+                    id: 'h1',
+                    eventDate: '2026-09-01',
+                    body: hostile,
+                    authorId: 'u1',
+                    authorName: hostile,
+                  },
+                ],
+              },
             ],
           },
         ],
@@ -152,6 +169,9 @@ test('all management views use escaped live data and dynamically include new par
     'Missing summaries must not be represented as zero',
   )
   assert.match(renderCompLeave(), /data-testid="comp-leave-balance">7시간/)
+  assert.ok(renderCustomers().includes('종료 고객'))
+  assert.ok(renderCustomers().includes('히스토리'))
+  assert.ok(renderCustomers().includes('완전 삭제'))
 })
 
 test('customer failed save retains entered values and blocks duplicate requests', async (t) => {
@@ -187,6 +207,55 @@ test('customer failed save retains entered values and blocks duplicate requests'
   assert.equal(posts, 1)
   assert.ok(renderCustomers().includes('유지할 고객사'))
   assert.ok(renderCustomers().includes('저장 실패'))
+})
+
+test('customer edit sends only editable fields, not accumulated history', async (t) => {
+  session.user = { userId: 'u1', role: 'admin' }
+  let payload
+  t.mock.method(globalThis, 'fetch', async (_path, options = {}) => {
+    if (options.method === 'PUT') {
+      payload = JSON.parse(options.body)
+      return new Response(null, { status: 204 })
+    }
+    return json({
+      owners: [
+        {
+          userId: 'u1',
+          name: '담당자',
+          customers: [
+            {
+              id: 'c1',
+              name: '고객사',
+              tier: 'Standard',
+              mcr: false,
+              keyAccount: false,
+              since: '2026-09-01',
+              note: '요약',
+              active: true,
+              history: [{ id: 'h1', body: 'x'.repeat(1000) }],
+            },
+          ],
+        },
+      ],
+    })
+  })
+  await loadCustomers()
+  const edit = element({ editCustomer: 'c1', owner: 'u1' })
+  bindCustomers(root({}, { '[data-edit-customer]': [edit] }), () => {})
+  edit.handlers.click()
+  const form = element()
+  bindCustomers(root({ '#customer-form': form }), () => {})
+  form.handlers.submit({ preventDefault() {} })
+  await tick()
+  assert.deepEqual(Object.keys(payload).sort(), [
+    'keyAccount',
+    'mcr',
+    'name',
+    'note',
+    'since',
+    'tier',
+    'userId',
+  ])
 })
 
 test('schedule saves edited note and retains it after a failed write', async (t) => {
