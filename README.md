@@ -71,6 +71,22 @@ docker compose ps
 
 SSH는 기본 닫혀 있으며 SSM으로 관리합니다. 필요할 때만 `ssh_key_name`과 `ssh_allowed_cidrs`를 함께 지정하세요. `web_allowed_cidrs`로 웹 접근 범위를 제한할 수 있습니다. Terraform apply, 배포, DNS 변경은 코드 수정과 별개의 운영 작업입니다.
 
+## 검수된 초기 데이터 적재
+
+검수된 고객사·초과근무·대체휴가 JSON은 민감한 운영 데이터이므로 저장소에 커밋하지 않습니다. 기본 명령은 DB를 변경하지 않고 추가/기존 건수만 보여줍니다.
+
+```bash
+docker compose exec -T app npm run data:initial -- --file - < /secure/path/approved-initial-data.json
+```
+
+출력을 확인하고 백업을 생성한 뒤에만 적용합니다.
+
+```bash
+docker compose exec -T app npm run data:initial -- --file - --apply < /secure/path/approved-initial-data.json
+```
+
+적재는 하나의 트랜잭션으로 실행되고 재실행해도 동일한 기록을 추가하지 않습니다. 이미 있는 동일명 고객사의 속성과 담당 배정은 모두 보존하고 `건너뜀`으로 보고합니다. 적용 후 건별 되돌리기는 제공하지 않으므로 문제가 있으면 적용 직전 백업을 복구합니다.
+
 ## 백업과 복구
 
 ```bash
