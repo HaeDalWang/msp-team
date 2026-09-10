@@ -12,7 +12,13 @@ if (unknown.length) throw new Error(`알 수 없는 옵션: ${unknown.join(', ')
 if (!file) throw new Error('--file <JSON 경로> 또는 --file -가 필요합니다.')
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL이 필요합니다.')
 
-const input = JSON.parse(await readFile(file === '-' ? 0 : file, 'utf8'))
+let source
+if (file === '-') {
+  process.stdin.setEncoding('utf8')
+  source = ''
+  for await (const chunk of process.stdin) source += chunk
+} else source = await readFile(file, 'utf8')
+const input = JSON.parse(source)
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
 
 try {
