@@ -9,3 +9,4 @@ terraform/*.tfvars
 .DS_Store
 support.js
 *.dc.html
+developer/data-import/
