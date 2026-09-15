@@ -9,4 +9,6 @@ terraform/*.tfvars
 .DS_Store
 support.js
 *.dc.html
+# Added by code-review-graph
+.code-review-graph/
 developer/data-import/
