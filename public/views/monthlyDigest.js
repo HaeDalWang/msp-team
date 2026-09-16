@@ -41,21 +41,36 @@ function editor() {
 
 export function renderMonthlyDigest() {
   ensureOwner()
-  return `<main class="digest-page"><header><span class="eyebrow">AWS MONTHLY REPORT</span><h1>AWS 월간 리포트</h1><p>PDF를 분석하고 고객용·영업용 리포트와 발표 대본을 작성합니다.</p></header>
-    ${state.error ? `<p role="alert" class="digest-error">${h(state.error)}</p>` : ''}
-    ${!state.config?.enabled ? '<p role="status">월간 리포트 연결을 준비 중입니다. JSON 불러오기와 편집은 사용할 수 있습니다.</p><button id="digest-retry">연결 다시 확인</button>' : ''}
-    <fieldset class="digest-controls" ${state.busy ? 'disabled' : ''}><legend>1. 자료 준비</legend>
-      <label>분석할 PDF <input id="digest-files" type="file" accept="application/pdf,.pdf" multiple></label><small>최대 3개 · 파일당 20MB · 합계 150페이지 · 텍스트 PDF</small>
-      <p>${state.files.map(file => h(file.name)).join(', ') || '선택된 파일이 없습니다.'}</p>
-      <div class="digest-actions"><button id="digest-analyze" class="primary" ${!state.config?.enabled || !state.files.length ? 'disabled' : ''}>PDF 분석 시작</button><label class="digest-import">기존 JSON 불러오기<input id="digest-import" type="file" accept="application/json,.json"></label></div>
-    </fieldset>
+  return `<main class="digest-page">
+    <header class="digest-header">
+      <div class="digest-title"><span>AWS MONTHLY REPORT</span><h1>AWS 월간 리포트</h1><p>PDF 분석부터 검토, 미리보기와 산출물 저장까지 한 화면에서 작업합니다.</p></div>
+      <div class="digest-header-actions"><button id="digest-export">JSON 저장</button><button id="digest-pdf" ${!state.config?.enabled ? 'disabled' : ''}>${state.previewKind === 'sales' ? '영업용' : '고객용'} PDF</button><button id="digest-download" class="primary" ${!state.config?.enabled ? 'disabled' : ''}>전체 산출물 ZIP</button></div>
+    </header>
+    ${state.error ? `<div role="alert" class="digest-banner error">${h(state.error)}</div>` : ''}
+    ${!state.config?.enabled ? '<div role="status" class="digest-banner">월간 리포트 연결을 준비 중입니다. JSON 불러오기와 편집은 사용할 수 있습니다. <button id="digest-retry">연결 다시 확인</button></div>' : ''}
     <div class="digest-status" role="status" aria-live="polite">${h(state.message)}${state.busy ? `<progress max="100" value="${state.progress}">${state.progress}%</progress>` : ''}</div>
-    <fieldset class="digest-controls" ${state.busy ? 'disabled' : ''}><legend>2. 내용 검토·편집</legend>
-      <div class="digest-fields"><label>리포트 제목<input data-meta="title" maxlength="12000" value="${h(state.report.meta.title)}"></label><label>작성월<input data-meta="written" maxlength="7" placeholder="2026.09" value="${h(state.report.meta.written)}"></label></div>
-      <div class="digest-tabs" role="group" aria-label="리포트 편집 영역">${Object.entries(tabs).map(([id, label]) => `<button data-digest-tab="${id}" aria-pressed="${state.tab === id}">${label}</button>`).join('')}</div>
-      <div class="digest-layout"><section class="digest-editor">${editor()}</section><section class="digest-preview"><div class="digest-actions"><label>미리보기 종류<select id="digest-preview-kind"><option value="customer" ${state.previewKind === 'customer' ? 'selected' : ''}>고객용</option><option value="sales" ${state.previewKind === 'sales' ? 'selected' : ''}>영업용</option></select></label><button id="digest-preview" ${!state.config?.enabled ? 'disabled' : ''}>미리보기 갱신</button></div><p>편집 후 미리보기를 갱신하면 PDF에 반영될 내용을 확인할 수 있습니다.</p><iframe id="digest-frame" title="리포트 미리보기" sandbox="" referrerpolicy="no-referrer"></iframe></section></div>
-    </fieldset>
-    <fieldset class="digest-controls" ${state.busy ? 'disabled' : ''}><legend>3. 저장·공유</legend><p>편집 내용은 이 화면에만 있습니다. 나가기 전 전체 JSON을 저장하면 이어서 작성할 수 있습니다.</p><div class="digest-actions"><button id="digest-export">전체 JSON 저장</button><button id="digest-download" ${!state.config?.enabled ? 'disabled' : ''}>전체 산출물 ZIP</button><button id="digest-pdf" ${!state.config?.enabled ? 'disabled' : ''}>${state.previewKind === 'sales' ? '영업용' : '고객용'} PDF</button></div><details><summary>Slack으로 공유</summary><div class="digest-selection">${Object.entries(artifacts).map(([key, label]) => `<label><input type="checkbox" name="digest-artifact" value="${key}" ${key.endsWith('_pdf') ? 'checked' : ''}>${label}</label>`).join('')}</div><button id="digest-slack" ${!state.config?.slackEnabled ? 'disabled' : ''}>선택한 파일 Slack 전송</button>${!state.config?.slackEnabled ? '<p>Slack 전송 연결을 준비 중입니다.</p>' : ''}</details></fieldset>
+    <div class="digest-workspace">
+      <section class="digest-editor-pane" aria-label="리포트 편집기">
+        <div class="digest-editor-scroll">
+          <fieldset class="digest-card digest-source" ${state.busy ? 'disabled' : ''}><legend>원본 자료</legend>
+            <label class="digest-dropzone"><span class="digest-upload-icon" aria-hidden="true">↑</span><strong>분석할 PDF 선택</strong><small>클릭하여 파일을 선택하세요 · 최대 3개, 파일당 20MB</small><input id="digest-files" type="file" accept="application/pdf,.pdf" multiple></label>
+            <p class="digest-file-list">${state.files.map(file => h(file.name)).join(' · ') || '선택된 PDF가 없습니다.'}</p>
+            <div class="digest-actions"><button id="digest-analyze" class="primary" ${!state.config?.enabled || !state.files.length ? 'disabled' : ''}>AI 분석 시작</button><label class="digest-import">기존 JSON 불러오기<input id="digest-import" type="file" accept="application/json,.json"></label></div>
+          </fieldset>
+          <fieldset class="digest-card digest-document" ${state.busy ? 'disabled' : ''}><legend>문서 정보</legend>
+            <div class="digest-fields"><label>리포트 제목<input data-meta="title" maxlength="12000" value="${h(state.report.meta.title)}"></label><label>작성월<input data-meta="written" maxlength="7" placeholder="2026.09" value="${h(state.report.meta.written)}"></label></div>
+          </fieldset>
+          <nav class="digest-tabs" aria-label="리포트 편집 영역">${Object.entries(tabs).map(([id, label]) => `<button data-digest-tab="${id}" aria-pressed="${state.tab === id}">${label}</button>`).join('')}</nav>
+          <fieldset class="digest-card digest-editor" ${state.busy ? 'disabled' : ''}>${editor()}</fieldset>
+          <details class="digest-card digest-share"><summary>Slack으로 산출물 공유</summary><div class="digest-selection">${Object.entries(artifacts).map(([key, label]) => `<label><input type="checkbox" name="digest-artifact" value="${key}" ${key.endsWith('_pdf') ? 'checked' : ''}>${label}</label>`).join('')}</div><button id="digest-slack" ${!state.config?.slackEnabled ? 'disabled' : ''}>선택한 파일 Slack 전송</button>${!state.config?.slackEnabled ? '<p>Slack 전송 연결을 준비 중입니다.</p>' : ''}</details>
+          <p class="digest-save-note">편집 내용은 자동 저장되지 않습니다. 작업을 마치기 전 상단의 JSON 저장을 이용해 주세요.</p>
+        </div>
+      </section>
+      <aside class="digest-preview-pane" aria-label="리포트 미리보기">
+        <header class="digest-preview-toolbar"><div><strong>문서 미리보기</strong><span>편집 후 갱신하면 PDF와 동일한 내용을 확인할 수 있습니다.</span></div><label>종류<select id="digest-preview-kind"><option value="customer" ${state.previewKind === 'customer' ? 'selected' : ''}>고객용</option><option value="sales" ${state.previewKind === 'sales' ? 'selected' : ''}>영업용</option></select></label><button id="digest-preview" ${!state.config?.enabled ? 'disabled' : ''}>미리보기 갱신</button></header>
+        <div class="digest-preview-scroll"><div class="digest-preview-paper">${state.preview ? '<iframe id="digest-frame" title="리포트 미리보기" sandbox="" referrerpolicy="no-referrer"></iframe>' : '<div class="digest-preview-empty"><span aria-hidden="true">▤</span><strong>미리보기 준비</strong><p>왼쪽에서 내용을 편집한 뒤<br>‘미리보기 갱신’을 눌러 주세요.</p></div>'}</div></div>
+      </aside>
+    </div>
   </main>`
 }
 
@@ -105,6 +120,9 @@ export function serializeReport(report) {
 export function bindMonthlyDigest(root, render) {
   const frame = root.querySelector('#digest-frame')
   if (frame) frame.srcdoc = state.preview
+  if (state.busy) {
+    root.querySelectorAll('.digest-header-actions button, .digest-tabs button, .digest-share input, .digest-share button, #digest-preview-kind, #digest-preview').forEach(control => { control.disabled = true })
+  }
   const changed = () => { state.dirty = true; state.preview = ''; if (frame) frame.srcdoc = '' }
   const on = (selector, event, callback) => root.querySelector(selector)?.addEventListener(event, callback)
   const update = (object, key, value) => {

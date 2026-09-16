@@ -309,7 +309,7 @@ function render() {
   )
   document.documentElement.dataset.theme = state.light ? 'light' : 'dark'
   const root = document.querySelector('#root')
-  const scrollSelectors = ['.management-page', '.owner-board', '.review-scroll', '.people-rail', '.review-panel', '.structured-editor', '.all-reviews', '.schedule-table-wrap', '.engineer-overview-table', ...reviewFields.map((field) => `textarea[data-field="${field}"]`), '#comment-draft', '#schedule-note']
+  const scrollSelectors = ['.management-page', '.owner-board', '.review-scroll', '.people-rail', '.review-panel', '.structured-editor', '.all-reviews', '.schedule-table-wrap', '.engineer-overview-table', '.digest-editor-scroll', '.digest-preview-scroll', ...reviewFields.map((field) => `textarea[data-field="${field}"]`), '#comment-draft', '#schedule-note']
   scrollSelectors.push('.comp-table-wrap')
   const scrollPositions = scrollSelectors.flatMap((selector) =>
     [...root.querySelectorAll(selector)].map((element, index) => [selector, index, element.scrollLeft, element.scrollTop]),

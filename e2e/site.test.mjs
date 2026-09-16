@@ -30,6 +30,7 @@ test('monthly digest uploads with CSP, streams analysis, edits, exports, preview
     if (op === 'config') yield { chunk: Buffer.from(JSON.stringify({ enabled: true, slackEnabled: false })) }
     else if (op === 'upload-url') yield { chunk: Buffer.from(JSON.stringify({ session_id: 'a'.repeat(32), uploads: [{ key: 'test-key', fields: { key: 'test-key' }, url: uploadOrigin }] })) }
     else if (op === 'analyze') {
+      await new Promise(resolve => setTimeout(resolve, 100))
       yield { chunk: Buffer.from('{"progress":25,"msg":"분석 중"}\n') }
       yield { chunk: Buffer.from(JSON.stringify({ success: true, data: sample }) + '\n') }
     } else if (op === 'preview') yield { chunk: Buffer.from('<h1>리포트 미리보기</h1><script>parent.digestInjected=true</script>') }
@@ -39,8 +40,21 @@ test('monthly digest uploads with CSP, streams analysis, edits, exports, preview
   await page.route(uploadOrigin + '/**', async route => { uploads++; await route.fulfill({ status: 204, headers: { 'access-control-allow-origin': base } }) })
   await page.goto(base + '/#monthly-digest')
   await expect(page.getByRole('heading', { name: 'AWS 월간 리포트' })).toBeVisible()
+  await expect(page.locator('.digest-workspace')).toHaveCSS('display', 'grid')
+  const desktopLayout = await page.evaluate(() => {
+    const element = document.querySelector('.digest-workspace')
+    const editor = element.querySelector('.digest-editor-pane').getBoundingClientRect()
+    const preview = element.querySelector('.digest-preview-pane').getBoundingClientRect()
+    return { editorRight: editor.right, previewLeft: preview.left,
+      height: element.getBoundingClientRect().height, viewport: innerHeight }
+  })
+  assert.ok(desktopLayout.previewLeft >= desktopLayout.editorRight)
+  assert.ok(desktopLayout.height < desktopLayout.viewport)
+  await expect(page.locator('.digest-preview-empty')).toContainText('미리보기 준비')
   await page.locator('#digest-files').setInputFiles({ name: 'source.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-test') })
   await page.locator('#digest-analyze').click()
+  await expect(page.locator('.digest-editor textarea').first()).toBeDisabled()
+  await expect(page.locator('#digest-export')).toBeDisabled()
   await expect(page.locator('.digest-status')).toContainText('분석을 완료했습니다')
   assert.equal(uploads, 1)
   await expect(page.locator('[data-key="source_quote"]')).toHaveValue('AWS original source')
@@ -65,6 +79,12 @@ test('monthly digest uploads with CSP, streams analysis, edits, exports, preview
   await page.screenshot({ path: '/tmp/msp-monthly-digest-desktop.png', fullPage: true })
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true)
+  const mobileLayout = await page.locator('.digest-workspace').evaluate(element => {
+    const editor = element.querySelector('.digest-editor-pane').getBoundingClientRect()
+    const preview = element.querySelector('.digest-preview-pane').getBoundingClientRect()
+    return { previewTop: preview.top, editorBottom: editor.bottom }
+  })
+  assert.ok(mobileLayout.previewTop >= mobileLayout.editorBottom)
   await page.screenshot({ path: '/tmp/msp-monthly-digest-mobile.png', fullPage: true })
 })
 
