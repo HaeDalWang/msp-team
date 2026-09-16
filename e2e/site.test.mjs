@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { chromium, expect } from '@playwright/test'
 import { fixture, review, overtime } from '../test/fixtures.mjs'
 
-async function browserFixture(t, user = 'user') {
-  const f = await fixture(t)
+async function browserFixture(t, user = 'user', options = {}) {
+  const f = await fixture(t, options)
   const browser = await chromium.launch()
   t.after(() => browser.close())
   const context = await browser.newContext({
@@ -19,6 +19,54 @@ async function browserFixture(t, user = 'user') {
   t.after(() => assert.deepEqual(errors, [], 'No browser runtime errors'))
   return { ...f, page, context }
 }
+
+test('monthly digest uploads with CSP, streams analysis, edits, exports, previews safely and protects drafts', async t => {
+  const sample = { meta: { title: 'AWS 월간 리포트', written: '2026.09' }, customer: { eol_eos: [{ service: 'RDS', action: '업그레이드 확인', source_quote: 'AWS original source' }], whats_new: [] }, sales: [], script: {} }
+  const uploadOrigin = 'https://digest-test.s3.ap-northeast-2.amazonaws.com'
+  const invoke = async function* (event) {
+    const op = event.rawPath.split('/').at(-1)
+    const type = op === 'analyze' ? 'application/x-ndjson' : op === 'preview' ? 'text/html' : 'application/json'
+    yield { metadata: { statusCode: 200, headers: { 'content-type': type } } }
+    if (op === 'config') yield { chunk: Buffer.from(JSON.stringify({ enabled: true, slackEnabled: false })) }
+    else if (op === 'upload-url') yield { chunk: Buffer.from(JSON.stringify({ session_id: 'a'.repeat(32), uploads: [{ key: 'test-key', fields: { key: 'test-key' }, url: uploadOrigin }] })) }
+    else if (op === 'analyze') {
+      yield { chunk: Buffer.from('{"progress":25,"msg":"분석 중"}\n') }
+      yield { chunk: Buffer.from(JSON.stringify({ success: true, data: sample }) + '\n') }
+    } else if (op === 'preview') yield { chunk: Buffer.from('<h1>리포트 미리보기</h1><script>parent.digestInjected=true</script>') }
+  }
+  const { page, base } = await browserFixture(t, 'user', { env: { MONTHLY_DIGEST_FUNCTION_NAME: 'test', MONTHLY_DIGEST_UPLOAD_ORIGIN: uploadOrigin }, monthlyDigestInvoke: invoke })
+  let uploads = 0
+  await page.route(uploadOrigin + '/**', async route => { uploads++; await route.fulfill({ status: 204, headers: { 'access-control-allow-origin': base } }) })
+  await page.goto(base + '/#monthly-digest')
+  await expect(page.getByRole('heading', { name: 'AWS 월간 리포트' })).toBeVisible()
+  await page.locator('#digest-files').setInputFiles({ name: 'source.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-test') })
+  await page.locator('#digest-analyze').click()
+  await expect(page.locator('.digest-status')).toContainText('분석을 완료했습니다')
+  assert.equal(uploads, 1)
+  await expect(page.locator('[data-key="source_quote"]')).toHaveValue('AWS original source')
+  await page.locator('[data-key="action"]').fill('고객과 점검 일정 협의')
+  await page.locator('#digest-preview').click()
+  await expect(page.frameLocator('#digest-frame').getByRole('heading')).toHaveText('리포트 미리보기')
+  assert.equal(await page.evaluate(() => window.digestInjected), undefined)
+  page.once('dialog', dialog => dialog.dismiss())
+  await page.locator('[data-view="customers"]').click()
+  await expect(page.locator('[data-key="action"]')).toHaveValue('고객과 점검 일정 협의')
+  const downloaded = page.waitForEvent('download')
+  await page.locator('#digest-export').click()
+  const download = await downloaded
+  assert.equal(download.suggestedFilename(), 'aws-monthly-report.json')
+  const stream = await download.createReadStream()
+  const chunks = []
+  for await (const chunk of stream) chunks.push(chunk)
+  const bytes = Buffer.concat(chunks)
+  assert.equal(JSON.parse(bytes).customer.eol_eos[0].action, '고객과 점검 일정 협의')
+  await page.locator('#digest-import').setInputFiles({ name: 'saved.json', mimeType: 'application/json', buffer: bytes })
+  await expect(page.locator('[data-key="action"]')).toHaveValue('고객과 점검 일정 협의')
+  await page.screenshot({ path: '/tmp/msp-monthly-digest-desktop.png', fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true)
+  await page.screenshot({ path: '/tmp/msp-monthly-digest-mobile.png', fullPage: true })
+})
 
 test('narrow review preserves comments across people and weeks and exposes navigation', async (t) => {
   const { page, base, request } = await browserFixture(t)

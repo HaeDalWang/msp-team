@@ -160,6 +160,18 @@ resource "aws_instance" "app" {
   }
 
   tags = { Name = "${var.project_name}-app" }
+
+  # Preserve the running instance/DB when the newest AL2023 image changes.
+  # OS replacement is an explicit maintenance task with data migration.
+  lifecycle {
+    ignore_changes  = [ami]
+    prevent_destroy = true
+  }
+
+  metadata_options {
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
 }
 
 resource "aws_eip" "app" {

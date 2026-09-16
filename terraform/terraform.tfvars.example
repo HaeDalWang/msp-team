@@ -13,6 +13,12 @@ project_name = "msp-weekly-review"
 instance_type = "t3.medium"
 ssh_key_name  = ""
 
+# 선택: AWS 월간 리포트. 최초 image_uri가 비어 있으면 ECR 등만 준비한다.
+# enable_monthly_digest = true
+# monthly_digest_site_origin = "https://msp.example.com"
+# monthly_digest_image_uri = "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/msp-weekly-review-monthly-digest@sha256:..."
+# monthly_digest_slack_secret_arn = "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:..."
+
 # 주의: Slack Client ID/Secret, PostgreSQL 비밀번호, SESSION_SECRET은 여기 넣지 않는다.
 # terraform apply로 인프라만 만든 뒤, app_public_ip 출력값을 확인하고
 # scripts/deploy-app.sh를 SSM으로 실행할 때 환경변수로 넘긴다 (2단계 배포).

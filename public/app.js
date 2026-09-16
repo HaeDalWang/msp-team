@@ -10,6 +10,7 @@ import { buildMonthlyTeamOutput, weeksInMonth } from './monthlyOutput.js'
 import { session, loadSession, isAdminOrLead } from './session.js'
 import { api } from './api.js'
 import { escapeHtml, escapeAttr } from './html.js'
+import { renderMonthlyDigest, bindMonthlyDigest, loadMonthlyDigest, monthlyDigestDirty, discardMonthlyDigest, monthlyDigestBusy } from './views/monthlyDigest.js'
 import {
   renderCustomers,
   bindCustomers,
@@ -44,6 +45,7 @@ import {
 } from './views/organization.js'
 
 const viewLoaders = {
+  'monthly-digest': loadMonthlyDigest,
   customers: loadCustomers,
   schedule: loadSchedule,
   'comp-leave': loadCompLeave,
@@ -51,6 +53,7 @@ const viewLoaders = {
 }
 const authState = session
 const managementDrafts = {
+  'monthly-digest': [monthlyDigestDirty, discardMonthlyDigest, monthlyDigestBusy],
   customers: [customersDirty, discardCustomers, customersBusy],
   schedule: [scheduleDirty, discardSchedule, scheduleBusy],
   'comp-leave': [compLeaveDirty, discardCompLeave, compLeaveBusy],
@@ -81,6 +84,7 @@ const statusClass = {
   미작성: 'missing',
 }
 const validViews = [
+  'monthly-digest',
   'dashboard',
   'review',
   'edit',
@@ -358,6 +362,7 @@ function topbar() {
     ['schedule', 'CalendarRange', '일정 관리'],
     ['comp-leave', 'TimerReset', '대체휴가'],
     ['organization', 'ShieldCheck', '조직 관리'],
+    ['monthly-digest', 'FileText', 'AWS 월간 리포트'],
   ]
   return `<header class="topbar">
     <div class="brand"><span class="brand-mark"></span><strong>MSP 주간회고</strong><span class="brand-scope">CSG MSP</span></div>
@@ -451,6 +456,7 @@ function mainView() {
   if (state.view === 'schedule') return renderSchedule()
   if (state.view === 'comp-leave') return renderCompLeave()
   if (state.view === 'organization') return renderOrganization()
+  if (state.view === 'monthly-digest') return renderMonthlyDigest()
   return ''
 }
 
@@ -1086,6 +1092,7 @@ function bindEvents(root) {
   if (state.view === 'schedule') bindSchedule(root, render)
   if (state.view === 'comp-leave') bindCompLeave(root, render)
   if (state.view === 'organization') bindOrganization(root, render)
+  if (state.view === 'monthly-digest') bindMonthlyDigest(root, render)
   root.querySelector('#load-previous')?.addEventListener('click', async () => {
     if (!confirmDiscard()) return
     const week = state.reviewEnd

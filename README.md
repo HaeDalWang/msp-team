@@ -113,7 +113,11 @@ sudo journalctl -u msp-weekly-review-backup.service --no-pager
 
 timer 설정만으로 백업 성공이 보장되지는 않습니다. 최초 실행 성공과 S3 파일을 확인하고 복구를 별도 테스트 DB에서 정기적으로 확인하세요. EC2의 AWS CLI 및 S3 접근 IAM role이 필요합니다.
 
-## 유지보수
+## AWS 월간 리포트
+
+`AWS 월간 리포트` 메뉴에서 PDF 분석, 고객용·영업용 편집, 발표 대본, 미리보기, PDF/ZIP/JSON 다운로드와 선택 파일 Slack 공유를 제공합니다. 연결 설정이 비어 있으면 준비 상태를 표시하고 JSON 불러오기·편집·저장만 사용할 수 있습니다. 기존 EC2와 DB를 유지하며 무거운 분석/PDF 작업은 별도 Python Lambda에서 수행합니다. [통합 구조와 배포 절차](services/monthly-digest/README.md)를 참고하세요.
+
+## 코드 유지보수
 
 `src/`는 서버·인증·스키마, `public/`는 화면, `test/`는 동작 테스트, `scripts/`와 `terraform/`는 운영 구성입니다. 마이그레이션은 기존 데이터를 보존하며 재실행 가능해야 합니다. `.env`, tfvars, state, plan, 백업에는 민감 정보가 포함될 수 있으므로 커밋하지 않습니다. `seed.json`에도 팀원 정보가 있으므로 공개 공유 전에 확인하세요.
 

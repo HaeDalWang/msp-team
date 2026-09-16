@@ -4,7 +4,7 @@ import { migrate } from '../src/db.mjs'
 import { createApp } from '../src/server.mjs'
 import { createSessionToken } from '../src/auth.mjs'
 
-export async function fixture(t) {
+export async function fixture(t, options = {}) {
   if (!process.env.TEST_DATABASE_URL)
     throw new Error(
       'Use npm test to start an isolated PostgreSQL container, or set TEST_DATABASE_URL to a disposable test database.',
@@ -42,8 +42,9 @@ export async function fixture(t) {
     SLACK_CLIENT_SECRET: 'test-secret',
     SESSION_SECRET: 'test-session-secret-at-least-32-characters',
     SLACK_REDIRECT_URI: 'http://localhost/auth/slack/callback',
+    ...options.env,
   }
-  server = createApp(pool, env).listen(0, '127.0.0.1')
+  server = createApp(pool, env, { monthlyDigestInvoke: options.monthlyDigestInvoke }).listen(0, '127.0.0.1')
   await new Promise((resolve) => server.once('listening', resolve))
   const base = `http://127.0.0.1:${server.address().port}`
   env.SLACK_REDIRECT_URI = `${base}/auth/slack/callback`

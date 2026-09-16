@@ -10,6 +10,7 @@ import {
   requireSession,
 } from './auth.mjs'
 import * as v from './validation.mjs'
+import { registerMonthlyDigest } from './monthlyDigest.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const roles = ['engineer', 'lead', 'executive', 'admin']
@@ -78,7 +79,7 @@ function userFields(body) {
   return fields
 }
 
-export function createApp(pool, env = process.env) {
+export function createApp(pool, env = process.env, { monthlyDigestInvoke } = {}) {
   if (env.NODE_ENV === 'production') {
     for (const key of [
       'SLACK_CLIENT_ID',
@@ -97,19 +98,23 @@ export function createApp(pool, env = process.env) {
       )
   }
   const app = express()
+  const uploadOrigin = env.MONTHLY_DIGEST_UPLOAD_ORIGIN || ''
+  if (uploadOrigin && !/^https:\/\/[a-z0-9][a-z0-9-]*\.s3\.[a-z0-9-]+\.amazonaws\.com$/.test(uploadOrigin))
+    throw new Error('MONTHLY_DIGEST_UPLOAD_ORIGIN은 리포트 S3 버킷의 HTTPS origin이어야 합니다.')
   app.disable('x-powered-by')
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader('Referrer-Policy', 'same-origin')
     res.setHeader(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+      `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${uploadOrigin ? ` ${uploadOrigin}` : ''}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`,
     )
     if (req.path.startsWith('/api/') || req.path.startsWith('/auth/'))
       res.setHeader('Cache-Control', 'no-store')
     next()
   })
-  app.use(express.json({ limit: '128kb' }))
+  const normalJson = express.json({ limit: '128kb' })
+  app.use((req, res, next) => req.path.startsWith('/api/monthly-digest/') ? next() : normalJson(req, res, next))
   app.get('/health', async (_req, res) => {
     try {
       await pool.query('SELECT 1')
@@ -120,6 +125,7 @@ export function createApp(pool, env = process.env) {
   })
   registerAuthRoutes(app, pool, env)
   app.use('/api', requireSession(env, pool))
+  app.use('/api/monthly-digest', express.json({ limit: '2mb' }))
   const limits = new Map()
   app.use('/api', (req, res, next) => {
     const now = Date.now()
@@ -156,6 +162,7 @@ export function createApp(pool, env = process.env) {
     req.body ??= {}
     next()
   })
+  registerMonthlyDigest(app, pool, env, monthlyDigestInvoke)
   const adminOnly = requireRole(env, ['admin'])
   const leadOnly = requireRole(env, ['admin', 'lead'])
   const selfOnly = requireSelfOrRole(

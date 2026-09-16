@@ -12,3 +12,6 @@ support.js
 # Added by code-review-graph
 .code-review-graph/
 developer/data-import/
+__pycache__/
+*.pyc
+.venv/

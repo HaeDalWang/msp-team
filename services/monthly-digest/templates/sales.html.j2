@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>{{ meta.title }} (영업용)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @page {
+    size: A4;
+    margin: 16mm 15mm 16mm 15mm;
+  }
+
+  body {
+    font-family: "Noto Sans CJK KR", "Noto Sans KR", sans-serif;
+    color: #23262b;
+    font-size: 10.3pt;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  @media screen {
+    html { background: #e9ecef; }
+    body {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      padding: 16mm 15mm;
+      background: #fff;
+      box-sizing: border-box;
+    }
+  }
+
+  .doc-header { border-bottom: 2.5px solid #16233b; padding-bottom: 14px; margin-bottom: 30px; width: 100%; }
+  .doc-header-table { width: 100%; border: none; }
+  .doc-header-table td { vertical-align: bottom; border: none; padding: 0; }
+  .doc-header-logo { text-align: right; width: 220px; }
+  .doc-header-logo img { height: 38px; width: auto; opacity: 0.88; }
+  .doc-header .eyebrow { font-size: 8.6pt; letter-spacing: 1.8px; text-transform: uppercase; color: #d97706; font-weight: 700; margin-bottom: 6px; }
+  .doc-header h1 { font-size: 21pt; font-weight: 700; color: #16233b; line-height: 1.2; }
+  .doc-header .subtitle { font-size: 10pt; color: #5b6472; margin-top: 8px; }
+
+  .intro { background: #f6f7f9; border-left: 3px solid #16233b; padding: 13px 18px; font-size: 9.6pt; color: #3c4048; margin-bottom: 40px; line-height: 1.7; white-space: pre-wrap; }
+
+  .section { margin-bottom: 44px; }
+  .section-title { border-left: 4px solid #d97706; padding-left: 12px; margin-bottom: 18px; }
+  .section-title h2 { font-size: 13.5pt; font-weight: 700; color: #16233b; display: inline; }
+  .section-title .note { font-size: 8.8pt; color: #9aa1ab; font-weight: 400; margin-left: 8px; }
+
+  .badge { display: inline-block; font-size: 7.6pt; font-weight: 700; padding: 2px 7px; border-radius: 3px; letter-spacing: 0.3px; vertical-align: middle; margin-right: 3px; margin-bottom: 3px; }
+  .badge-eol    { background: #fdecea; color: #b3261e; }
+  .badge-eos    { background: #eef1fd; color: #4148b0; }
+  .badge-ga     { background: #e6f0ff; color: #1257c4; }
+  .badge-preview{ background: #fff3e0; color: #b45309; }
+  .badge-custom { background: #f1f5f9; color: #475569; border: 0.5px solid #cbd5e1; }
+
+  .new-item { padding: 16px 0; border-bottom: 0.75px solid #eceef1; page-break-inside: avoid; break-inside: avoid; }
+  .new-item:last-child { border-bottom: none; }
+  .new-item .row1 { display: table; width: 100%; table-layout: fixed; margin-bottom: 6px; }
+  .new-item .row1 .title { display: table-cell; font-weight: 700; color: #16233b; font-size: 11pt; vertical-align: middle; }
+  .new-item .row1 .title .badge { margin-left: 7px; }
+  .new-item .row1 .date { display: table-cell; text-align: right; width: 80px; color: #9aa1ab; font-size: 8.8pt; vertical-align: middle; white-space: nowrap; }
+  .new-item .body { color: #4a5057; font-size: 9.7pt; white-space: pre-wrap; }
+  .new-item .url { font-size: 8.4pt; margin-top: 6px; word-break: break-all; }
+  .new-item .url a { color: #0071e3; text-decoration: none; }
+  .new-item .url a:hover { text-decoration: underline; }
+
+  .footer-note { margin-top: 30px; padding-top: 12px;  font-size: 8.4pt; color: #9aa1ab; }
+</style>
+</head>
+<body>
+
+  <div class="doc-header">
+    <table class="doc-header-table" cellspacing="0" cellpadding="0">
+      <tr>
+        <td class="doc-header-left">
+          {% if meta.eyebrow %}<div class="eyebrow">{{ meta.eyebrow }}</div>{% endif %}
+          <h1>{{ meta.title }}</h1>
+          <div class="subtitle">작성 {{ meta.written }} · MSP</div>
+        </td>
+        {% if logo_src %}
+        <td class="doc-header-logo">
+          <img src="{{ logo_src }}" alt="Logo">
+        </td>
+        {% endif %}
+      </tr>
+    </table>
+  </div>
+
+  {% if meta.sales_intro %}
+  <div class="intro">{{ meta.sales_intro }}</div>
+  {% endif %}
+
+  {%- macro render_url(url) -%}
+    {%- if url -%}
+      <div class="url"><a href="{{ url }}" target="_blank">{{ url }}</a></div>
+    {%- endif -%}
+  {%- endmacro -%}
+
+  <section class="section">
+    <div class="section-title">
+      <h2>AWS 서비스 변경사항 (What's New)</h2>
+      <span class="note">— 영업 참고용 전체 업데이트 내역</span>
+    </div>
+
+    {% for item in whats_new %}
+    <div class="new-item">
+      <div class="row1">
+        <div class="title">
+          {{ item.title }}
+          {% if item.badge %}
+            {% for b in item.badge.split(',') %}
+              {% set bt = b.strip() %}
+              {% set bl = bt|lower %}
+              {% if bl in ['eol','eos','ga','preview'] %}
+                <span class="badge badge-{{ bl }}">{{ bt|upper }}</span>
+              {% else %}
+                <span class="badge badge-custom">{{ bt }}</span>
+              {% endif %}
+            {% endfor %}
+          {% endif %}
+        </div>
+        {% if item.date %}<div class="date">{{ item.date }}</div>{% endif %}
+      </div>
+      {% if item.body %}<div class="body">{{ item.body | format_bullets | safe }}</div>{% endif %}
+      {{ render_url(item.url) }}
+    </div>
+    {% endfor %}
+
+    <div class="footer-note">
+      상세 내용은 담당 영업 및 엔지니어에게 문의해 주세요.
+    </div>
+  </section>
+
+</body>
+</html>
