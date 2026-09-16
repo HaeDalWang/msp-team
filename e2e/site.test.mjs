@@ -21,7 +21,7 @@ async function browserFixture(t, user = 'user', options = {}) {
 }
 
 test('monthly digest uploads with CSP, streams analysis, edits, exports, previews safely and protects drafts', async t => {
-  const sample = { meta: { title: 'AWS 월간 리포트', written: '2026.09' }, customer: { eol_eos: [{ service: 'RDS', action: '업그레이드 확인', source_quote: 'AWS original source' }], whats_new: [] }, sales: [], script: {} }
+  const sample = { meta: { title: "AWS 월간 What's New", written: '2026.09' }, customer: { eol_eos: [{ service: 'RDS', action: '업그레이드 확인', source_quote: 'AWS original source' }], whats_new: [] }, sales: [], script: {} }
   const uploadOrigin = 'https://digest-test.s3.ap-northeast-2.amazonaws.com'
   const invoke = async function* (event) {
     const op = event.rawPath.split('/').at(-1)
@@ -39,7 +39,7 @@ test('monthly digest uploads with CSP, streams analysis, edits, exports, preview
   let uploads = 0
   await page.route(uploadOrigin + '/**', async route => { uploads++; await route.fulfill({ status: 204, headers: { 'access-control-allow-origin': base } }) })
   await page.goto(base + '/#monthly-digest')
-  await expect(page.getByRole('heading', { name: 'AWS 월간 리포트' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: "AWS 월간 What's New" })).toBeVisible()
   await expect(page.locator('.digest-workspace')).toHaveCSS('display', 'grid')
   const desktopLayout = await page.evaluate(() => {
     const element = document.querySelector('.digest-workspace')

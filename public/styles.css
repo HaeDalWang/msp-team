@@ -25,7 +25,7 @@
   --topbar-height: calc(58px * var(--font-scale));
 }
 
-/* AWS monthly report is a self-contained document workspace. */
+/* AWS monthly What's New is a self-contained document workspace. */
 .digest-page {
   --digest-bg: #f3f4f6;
   --digest-surface: #fff;

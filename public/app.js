@@ -362,7 +362,7 @@ function topbar() {
     ['schedule', 'CalendarRange', '일정 관리'],
     ['comp-leave', 'TimerReset', '대체휴가'],
     ['organization', 'ShieldCheck', '조직 관리'],
-    ['monthly-digest', 'FileText', 'AWS 월간 리포트'],
+    ['monthly-digest', 'FileText', "AWS 월간 What's New"],
   ]
   return `<header class="topbar">
     <div class="brand"><span class="brand-mark"></span><strong>MSP 주간회고</strong><span class="brand-scope">CSG MSP</span></div>

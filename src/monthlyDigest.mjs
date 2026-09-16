@@ -8,7 +8,7 @@ export async function* decodeLambdaStream(events) {
   let complete = false
   for await (const event of events ?? []) {
     if (event.InvokeComplete) {
-      if (event.InvokeComplete.ErrorCode) throw new Error('월간 리포트 처리에 실패했습니다.')
+      if (event.InvokeComplete.ErrorCode) throw new Error("월간 What's New 처리에 실패했습니다.")
       complete = true
     }
     if (!event.PayloadChunk) continue
@@ -54,7 +54,7 @@ export function registerMonthlyDigest(app, pool, env, invokeOverride) {
       return res.status(404).json({ error: '지원하지 않는 리포트 요청입니다.' })
     if (!enabled()) return operation === 'config'
       ? res.json({ enabled: false })
-      : res.status(503).json({ error: '월간 리포트 연결이 아직 설정되지 않았습니다.' })
+      : res.status(503).json({ error: "월간 What's New 연결이 아직 설정되지 않았습니다." })
     const userId = req.session.userId
     const heavy = expensive.has(operation)
     if (heavy && (busy.has(userId) || busy.size >= 2))

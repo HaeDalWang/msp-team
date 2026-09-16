@@ -3,7 +3,7 @@ import { escapeHtml as h } from '../html.js'
 import { session } from '../session.js'
 
 const endpoint = '/api/monthly-digest'
-const blank = () => ({ meta: { title: 'AWS 월간 리포트', written: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).format(new Date()).replace('-', '.'), customer_intro: '', sales_intro: '' }, customer: { eol_eos: [], whats_new: [] }, sales: [], script: { outline: '', speech: '' }, diagnostics: {} })
+const blank = () => ({ meta: { title: "AWS 월간 What's New", written: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).format(new Date()).replace('-', '.'), customer_intro: '', sales_intro: '' }, customer: { eol_eos: [], whats_new: [] }, sales: [], script: { outline: '', speech: '' }, diagnostics: {} })
 const state = { config: null, report: blank(), user: null, files: [], tab: 'eol', dirty: false, busy: false, progress: 0, message: '', error: '', preview: '', previewKind: 'customer' }
 const tabs = { eol: '고객용 종료 안내', customer: '고객용 업데이트', sales: '영업용 업데이트', script: '발표 대본', diagnostics: '분석 진단' }
 const artifacts = { customer_pdf: '고객용 PDF', sales_pdf: '영업용 PDF', customer_json: '고객용 JSON', sales_json: '영업용 JSON', outline: '아웃라인', speech: '발표 대본', full_json: '전체 JSON' }
@@ -43,11 +43,11 @@ export function renderMonthlyDigest() {
   ensureOwner()
   return `<main class="digest-page">
     <header class="digest-header">
-      <div class="digest-title"><span>AWS MONTHLY REPORT</span><h1>AWS 월간 리포트</h1><p>PDF 분석부터 검토, 미리보기와 산출물 저장까지 한 화면에서 작업합니다.</p></div>
+      <div class="digest-title"><span>AWS MONTHLY WHAT'S NEW</span><h1>AWS 월간 What's New</h1><p>PDF 분석부터 검토, 미리보기와 산출물 저장까지 한 화면에서 작업합니다.</p></div>
       <div class="digest-header-actions"><button id="digest-export">JSON 저장</button><button id="digest-pdf" ${!state.config?.enabled ? 'disabled' : ''}>${state.previewKind === 'sales' ? '영업용' : '고객용'} PDF</button><button id="digest-download" class="primary" ${!state.config?.enabled ? 'disabled' : ''}>전체 산출물 ZIP</button></div>
     </header>
     ${state.error ? `<div role="alert" class="digest-banner error">${h(state.error)}</div>` : ''}
-    ${!state.config?.enabled ? '<div role="status" class="digest-banner">월간 리포트 연결을 준비 중입니다. JSON 불러오기와 편집은 사용할 수 있습니다. <button id="digest-retry">연결 다시 확인</button></div>' : ''}
+    ${!state.config?.enabled ? '<div role="status" class="digest-banner">월간 What\'s New 연결을 준비 중입니다. JSON 불러오기와 편집은 사용할 수 있습니다. <button id="digest-retry">연결 다시 확인</button></div>' : ''}
     <div class="digest-status" role="status" aria-live="polite">${h(state.message)}${state.busy ? `<progress max="100" value="${state.progress}">${state.progress}%</progress>` : ''}</div>
     <div class="digest-workspace">
       <section class="digest-editor-pane" aria-label="리포트 편집기">
