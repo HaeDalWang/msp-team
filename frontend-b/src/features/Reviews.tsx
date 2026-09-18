@@ -280,14 +280,14 @@ export function Reviews({
         </p>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           {["신규", "진행 중", "종료"].map((label, i) => (
-            <div key={label} className="rounded-lg border p-4">
+            <div key={label} className="b-metric-card rounded-xl border p-4">
               <div className="text-sm text-muted-foreground">{label} 티켓</div>
               <strong className="text-2xl tabular-nums">
                 {number(totals[i])}
               </strong>
             </div>
           ))}
-          <div className="rounded-lg border p-4">
+          <div className="b-metric-card rounded-xl border p-4">
             <div className="text-sm text-muted-foreground">회고 제출</div>
             <strong className="text-2xl tabular-nums">
               {submitted} / {entries.length}
@@ -403,7 +403,7 @@ export function Reviews({
       ) : (
         <div className="review-columns">
           <aside
-            className="review-people rounded-lg border p-2"
+            className="review-people rounded-xl border p-2"
             aria-label="엔지니어 목록"
           >
             <p className="px-2 py-2 text-sm font-medium">
@@ -473,7 +473,7 @@ export function Reviews({
                 <article
                   id={`review-${e.id}`}
                   key={e.id}
-                  className="min-w-0 flex flex-col gap-4 border-b pb-6"
+                  className="b-review-entry min-w-0 flex flex-col gap-4 rounded-xl border p-5 md:p-6"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-xl font-semibold">{e.name}</h2>
@@ -499,7 +499,7 @@ export function Reviews({
                       </AlertDescription>
                     </Alert>
                   )}
-                  <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm tabular-nums">
+                  <div className="b-ticket-strip flex flex-wrap gap-x-2 gap-y-2 text-sm tabular-nums">
                     {["신규", "진행 중", "종료"].map((label, i) => (
                       <span key={label}>
                         {label} <strong>{number(e.tickets[i])}</strong>{" "}

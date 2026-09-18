@@ -294,26 +294,33 @@ function App() {
     );
   if (!user)
     return (
-      <main className="mx-auto flex min-h-svh max-w-md flex-col justify-center gap-5 p-6">
-        <p className="text-sm font-semibold text-muted-foreground">CSG MSP</p>
-        <h1 className="text-2xl font-semibold">MSP 주간회고</h1>
-        <p>
-          {authError ||
-            "등록된 MSP 팀원만 Slack 계정으로 로그인할 수 있습니다."}
-        </p>
-        <Button onClick={login}>Slack으로 로그인</Button>
+      <main className="b-login flex min-h-svh items-center justify-center p-6">
+        <div className="b-login-panel flex w-full max-w-md flex-col gap-5 rounded-xl border p-8">
+          <span className="b-brand-mark" aria-hidden="true">M</span>
+          <div>
+            <p className="b-eyebrow">CSG MSP WORKSPACE</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight">MSP 주간회고</h1>
+          </div>
+          <p className="leading-relaxed text-muted-foreground">
+            {authError ||
+              "등록된 MSP 팀원만 Slack 계정으로 로그인할 수 있습니다."}
+          </p>
+          <Button size="lg" onClick={login}>Slack으로 로그인</Button>
+        </div>
       </main>
     );
   return (
     <TooltipProvider>
       <SidebarProvider
+        className="b-app"
         style={{ "--sidebar-width": "13.5rem" } as React.CSSProperties}
       >
         <Sidebar collapsible="offcanvas">
-          <SidebarHeader className="border-b px-4 py-4">
-            <strong>MSP 주간회고</strong>
-            <span className="text-xs text-muted-foreground">
-              CSG MSP · 새 디자인
+          <SidebarHeader className="b-sidebar-header border-b px-4 py-5">
+            <span className="b-brand-mark" aria-hidden="true">M</span>
+            <span className="min-w-0">
+              <strong className="block truncate">MSP 주간회고</strong>
+              <span className="b-eyebrow block">CSG MSP WORKSPACE</span>
             </span>
           </SidebarHeader>
           <SidebarContent>
@@ -345,8 +352,11 @@ function App() {
               </SidebarGroup>
             ))}
           </SidebarContent>
-          <SidebarFooter className="border-t p-3">
-            <span className="px-2 text-sm">{user.name}</span>
+          <SidebarFooter className="b-sidebar-footer border-t p-3">
+            <div className="b-user">
+              <span className="b-user-avatar" aria-hidden="true">{user.name.slice(0, 1)}</span>
+              <span className="min-w-0 truncate text-sm font-medium">{user.name}</span>
+            </div>
             <Button
               variant="ghost"
               className="justify-start"
@@ -369,12 +379,13 @@ function App() {
           </SidebarFooter>
         </Sidebar>
         <SidebarInset className="min-w-0">
-          <header className="flex min-h-16 flex-wrap items-center gap-3 border-b px-4 py-3 md:px-6">
+          <header className="b-topbar flex min-h-16 flex-wrap items-center gap-3 border-b px-4 py-3 md:px-7">
             <SidebarTrigger />
             <div className="min-w-0">
-              <h1 className="text-xl font-semibold md:text-2xl">{page.name}</h1>
+              <p className="b-page-kicker">CSG MSP / {page.group}</p>
+              <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{page.name}</h1>
             </div>
-            <div className="ml-auto flex items-center gap-2">
+            <div className="b-design-switch ml-auto flex items-center gap-1">
               <Button variant="outline" onClick={switchDesign}>
                 기존 디자인 A
               </Button>
@@ -383,9 +394,9 @@ function App() {
               </Button>
             </div>
           </header>
-          <div className="flex min-w-0 flex-col gap-5 p-4 md:p-6">
+          <div className="b-content flex min-w-0 flex-col gap-6 p-4 md:p-7">
             {["review", "edit", "dashboard"].includes(view) && (
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="b-week-toolbar flex flex-wrap items-center gap-2">
                 <Button
                   variant="outline"
                   onClick={() => changeWeek(moveWeek(week, -1))}
