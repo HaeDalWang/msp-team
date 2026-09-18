@@ -40,11 +40,11 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Toaster } from "@/components/ui/sonner";
@@ -353,10 +353,15 @@ function App() {
             ))}
           </SidebarContent>
           <SidebarFooter className="b-sidebar-footer border-t p-3">
-            <div className="b-user">
+            <button
+              type="button"
+              className="b-user"
+              aria-label={`${user.name} 내 정보 수정`}
+              onClick={openProfile}
+            >
               <span className="b-user-avatar" aria-hidden="true">{user.name.slice(0, 1)}</span>
               <span className="min-w-0 truncate text-sm font-medium">{user.name}</span>
-            </div>
+            </button>
             <Button
               variant="ghost"
               className="justify-start"
@@ -462,7 +467,7 @@ function App() {
           </div>
         </SidebarInset>
       </SidebarProvider>
-      <Sheet
+      <Dialog
         open={settingsOpen}
         onOpenChange={(open) => {
           if (
@@ -476,10 +481,10 @@ function App() {
           setSettingsOpen(open);
         }}
       >
-        <SheetContent className="w-full overflow-y-auto sm:max-w-md">
-          <SheetHeader>
-            <SheetTitle>화면 설정과 내 정보</SheetTitle>
-          </SheetHeader>
+        <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>화면 설정과 내 정보</DialogTitle>
+          </DialogHeader>
           <div className="flex flex-col gap-5 px-4">
             <div className="flex gap-2">
               <Button
@@ -571,8 +576,8 @@ function App() {
               </FieldGroup>
             )}
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
       <Toaster theme={theme} />
     </TooltipProvider>
   );

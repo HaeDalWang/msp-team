@@ -10,12 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -356,13 +350,13 @@ export function Organization({
           </TableBody>
         </Table>
       </div>
-      <Sheet open={editing !== null} onOpenChange={close}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
-          <SheetHeader>
-            <SheetTitle>
+      <Dialog open={editing !== null} onOpenChange={close}>
+        <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>
               {editing === "new" ? "구성원 추가" : "구성원 수정"}
-            </SheetTitle>
-          </SheetHeader>
+            </DialogTitle>
+          </DialogHeader>
           <div className="flex flex-col gap-5 px-4">
             <FieldGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field>
@@ -515,8 +509,8 @@ export function Organization({
               {busy ? "저장 중…" : "저장"}
             </Button>
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={partsOpen}
         onOpenChange={(open) => {
