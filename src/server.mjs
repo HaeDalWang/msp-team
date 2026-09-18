@@ -286,7 +286,14 @@ export function createApp(pool, env = process.env, { monthlyDigestInvoke } = {})
       return status === 'submitted' && !text.trim() ? '특이사항 없음' : text
     })
     const tickets = ['ticketsNew', 'ticketsInProgress', 'ticketsDone'].map(
-      (field) => v.integer(b[field] === '' ? 0 : (b[field] ?? 0), '티켓 수'),
+      (field) => {
+        const value = v.integer(
+          b[field] === '' ? 0 : (b[field] ?? 0),
+          '티켓 수',
+        )
+        if (value > 1024) v.fail(400, '티켓 수는 1,024건 이하로 입력하세요.')
+        return value
+      },
     )
     const result = await transaction(pool, async (db) => {
       await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [

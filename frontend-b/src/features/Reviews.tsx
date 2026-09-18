@@ -11,6 +11,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Table,
@@ -617,11 +623,11 @@ export function Reviews({
           </div>
         </SheetContent>
       </Sheet>
-      <Sheet open={outputOpen} onOpenChange={setOutputOpen}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-2xl">
-          <SheetHeader>
-            <SheetTitle>{output?.title ?? "월간 Output"}</SheetTitle>
-          </SheetHeader>
+      <Dialog open={outputOpen} onOpenChange={setOutputOpen}>
+        <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{output?.title ?? "월간 Output"}</DialogTitle>
+          </DialogHeader>
           <div className="flex flex-col gap-4 px-4">
             <p className="text-sm text-muted-foreground">
               선택한 달에 시작하는 주의 제출·검토 완료 회고를 집계합니다. 티켓 처리 건수는 종료 티켓만 합산합니다.
@@ -638,8 +644,8 @@ export function Reviews({
               </Button>
             </div>
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

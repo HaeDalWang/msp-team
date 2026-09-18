@@ -15,6 +15,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -83,7 +89,9 @@ export function Organization({
   const [partsOpen, setPartsOpen] = useState(false);
   const [newPart, setNewPart] = useState("");
   const canEdit = user.role === "admin";
-  const dirty = JSON.stringify(draft) !== saved || !!newPart.trim();
+  const dirty =
+    (editing !== null && JSON.stringify(draft) !== saved) ||
+    (partsOpen && !!newPart.trim());
   useEffect(() => onDirty(dirty || busy), [dirty, busy, onDirty]);
   useEffect(() => {
     const controller = new AbortController();
@@ -509,7 +517,7 @@ export function Organization({
           </div>
         </SheetContent>
       </Sheet>
-      <Sheet
+      <Dialog
         open={partsOpen}
         onOpenChange={(open) => {
           if (!open && newPart.trim() && !confirm("새 파트 입력을 버릴까요?"))
@@ -518,10 +526,10 @@ export function Organization({
           setPartsOpen(open);
         }}
       >
-        <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
-          <SheetHeader>
-            <SheetTitle>파트 관리</SheetTitle>
-          </SheetHeader>
+        <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>파트 관리</DialogTitle>
+          </DialogHeader>
           <div className="flex flex-col gap-4 px-4">
             <p className="text-sm text-muted-foreground">
               소속 구성원이 없는 파트만 삭제할 수 있습니다. 낮은 발표 순서가
@@ -553,8 +561,8 @@ export function Organization({
               파트 추가
             </Button>
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

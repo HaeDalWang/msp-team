@@ -26,6 +26,7 @@ const empty: Draft = {
   otherNotes: "",
   tickets: [0, 0, 0],
 };
+const ticketCount = (value: number) => Math.min(1024, Math.max(0, value));
 function editorMode(): "list" | "grid" {
   try {
     return localStorage.getItem("msp-b-editor-mode") === "grid"
@@ -49,7 +50,7 @@ const fromReview = (entry?: Review): Draft =>
         actionItems: entry.actionItems,
         topsProjects: entry.topsProjects,
         otherNotes: entry.otherNotes,
-        tickets: [...entry.tickets] as Draft["tickets"],
+        tickets: entry.tickets.map(ticketCount) as Draft["tickets"],
       }
     : empty;
 export function ReviewEdit({
@@ -208,19 +209,27 @@ export function ReviewEdit({
             <FieldLabel htmlFor={`ticket-${i}`}>{label} 티켓</FieldLabel>
             <Input
               id={`ticket-${i}`}
-              type="number"
-              min={0}
-              step={1}
-              value={draft.tickets[i]}
-              onChange={(e) =>
+              aria-describedby={`ticket-${i}-hint`}
+              inputMode="numeric"
+              maxLength={4}
+              pattern="[0-9]*"
+              placeholder="0"
+              value={draft.tickets[i] || ""}
+              onChange={(event) => {
+                const digits = event.target.value
+                  .replace(/\D/g, "")
+                  .replace(/^0+(?=\d)/, "");
                 setDraft((old) => ({
                   ...old,
-                  tickets: old.tickets.map((n, index) =>
-                    index === i ? Number(e.target.value) : n,
+                  tickets: old.tickets.map((count, index) =>
+                    index === i ? ticketCount(Number(digits || 0)) : count,
                   ) as Draft["tickets"],
-                }))
-              }
+                }));
+              }}
             />
+            <small id={`ticket-${i}-hint`} className="text-muted-foreground">
+              0–1,024건
+            </small>
           </Field>
         ))}
       </FieldGroup>

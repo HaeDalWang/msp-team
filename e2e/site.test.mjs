@@ -217,7 +217,7 @@ test('light theme persists, editor fills width, calendar quick-save informs revi
 
 test('feedback: continuous font drag, all reviews, editor layout and customer scroll', async (t) => {
   const { page, base, request, pool } = await browserFixture(t, 'admin')
-  await request('/api/reviews', { method: 'PUT', body: review({ ticketsNew: 12345, ticketsDone: 99999 }) })
+  await request('/api/reviews', { method: 'PUT', body: review({ ticketsNew: 1024, ticketsDone: 1024 }) })
   await page.goto(base + '/?week=2026-09-07#review')
   await page.locator('[data-person="user"]').click()
   await page.locator('#settings-toggle').click()

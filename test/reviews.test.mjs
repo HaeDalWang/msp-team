@@ -82,6 +82,7 @@ test('submitted review requires content and nonnegative integer tickets', async 
     { ticketsDone: -1 },
     { ticketsNew: 1.5 },
     { ticketsNew: 'hello' },
+    { ticketsInProgress: 1025 },
     { weekEnd: '2026-02-30' },
     { status: 'reviewed' },
     { version: -1 },

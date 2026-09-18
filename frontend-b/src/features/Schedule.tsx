@@ -11,11 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -487,7 +487,7 @@ export function Schedule({
           );
         })}
       </div>
-      <Sheet
+      <Dialog
         open={!!selected}
         onOpenChange={(open) => {
           if (
@@ -497,10 +497,10 @@ export function Schedule({
             setSelected(null);
         }}
       >
-        <SheetContent className="w-full overflow-y-auto sm:max-w-md">
-          <SheetHeader>
-            <SheetTitle>일정 설정</SheetTitle>
-          </SheetHeader>
+        <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>일정 설정</DialogTitle>
+          </DialogHeader>
           {selected && (
             <div className="flex flex-col gap-5 px-4">
               <p>
@@ -611,13 +611,13 @@ export function Schedule({
               )}
             </div>
           )}
-        </SheetContent>
-      </Sheet>
-      <Sheet open={holidayOpen} onOpenChange={setHolidayOpen}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-md">
-          <SheetHeader>
-            <SheetTitle>휴일 관리</SheetTitle>
-          </SheetHeader>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={holidayOpen} onOpenChange={setHolidayOpen}>
+        <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>휴일 관리</DialogTitle>
+          </DialogHeader>
           <div className="flex flex-col gap-5 px-4">
             <FieldGroup>
               <Field>
@@ -675,8 +675,8 @@ export function Schedule({
               )}
             </div>
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

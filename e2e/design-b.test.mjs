@@ -80,6 +80,21 @@ test('B editor saves to the shared API and guards an unsaved design switch', asy
   await expect(page.getByLabel('주요 업무 현황')).toHaveValue('저장 전 변경')
 })
 
+test('B review ticket inputs support direct typing and cap weekly counts', async t => {
+  const { page, base, request } = await browserFixture(t)
+  await page.goto(base + '/b/?week=2026-09-07#edit')
+  const ticketsNew = page.getByLabel('신규 티켓')
+  await ticketsNew.fill('17')
+  await expect(ticketsNew).toHaveValue('17')
+  await ticketsNew.fill('1024')
+  await ticketsNew.pressSequentially('9')
+  await expect(ticketsNew).toHaveValue('1024')
+  await page.getByRole('button', { name: '제출', exact: true }).click()
+  await expect(page.getByText('회고를 제출했습니다.')).toBeVisible()
+  const data = await (await request('/api/reviews?weekEnd=2026-09-07&personal=true')).json()
+  assert.equal(data.entries.find(entry => entry.id === 'user').tickets[0], 1024)
+})
+
 test('B schedule saves the team calendar and keeps approved leave visible', async t => {
   const { page, base, request } = await browserFixture(t)
   await request('/api/schedule', {
@@ -166,6 +181,17 @@ test('B organization preserves read access and lets admins edit members and part
       .slice(0, 5),
   }))
   assert.ok(width.scrollWidth <= width.viewport + 1, JSON.stringify(width))
+})
+
+test('B organization does not warn before an edit begins', async t => {
+  const { page, base } = await browserFixture(t, 'admin')
+  await page.goto(base + '/b/#organization')
+  await expect(page.getByRole('heading', { name: '조직 관리' })).toBeVisible()
+  let prompted = false
+  page.on('dialog', dialog => { prompted = true; dialog.dismiss() })
+  await page.getByRole('button', { name: '리뷰' }).click()
+  await expect(page).toHaveURL(/\/b\/\?week=\d{4}-\d{2}-\d{2}#review$/)
+  assert.equal(prompted, false)
 })
 
 test('B monthly digest preserves the upload, analysis and sandbox preview flow', async t => {
