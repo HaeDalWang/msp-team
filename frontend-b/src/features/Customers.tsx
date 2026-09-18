@@ -14,13 +14,12 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
-  Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ResizableDataTable } from "@/components/ResizableDataTable";
+import { useTableColumnWidths } from "@/hooks/useTableColumnWidths";
 import { toast } from "sonner";
 
 type Row = Customer & { ownerId: string; owner: string; part: string | null };
@@ -68,6 +67,7 @@ export function Customers({
   const [part, setPart] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [status, setStatus] = useState("active");
+  const { widths: customerWidths, resize: resizeCustomers } = useTableColumnWidths("customers", [220, 140, 130, 130, 155, 100, 220]);
   const [grouped, setGrouped] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -332,22 +332,7 @@ export function Customers({
           <section key={group.name || "all"}>
             {group.name && <h2 className="mb-2 font-semibold">{group.name}</h2>}
             <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {[
-                      "고객사",
-                      "담당자",
-                      "파트",
-                      "서비스 등급",
-                      "구분",
-                      "상태",
-                      "메모",
-                    ].map((x) => (
-                      <TableHead key={x}>{x}</TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
+              <ResizableDataTable labels={["고객사", "담당자", "파트", "서비스 등급", "구분", "상태", "메모"]} widths={customerWidths} resize={resizeCustomers}>
                 <TableBody>
                   {group.rows.map((row) => (
                     <TableRow key={row.id}>
@@ -374,13 +359,13 @@ export function Customers({
                           {row.active ? "운영 중" : "종료"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="max-w-60 truncate">
+                      <TableCell className="truncate">
                         {row.note || "—"}
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+              </ResizableDataTable>
             </div>
           </section>
         ))

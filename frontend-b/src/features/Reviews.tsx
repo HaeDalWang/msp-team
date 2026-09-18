@@ -19,13 +19,12 @@ import {
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
-  Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ResizableDataTable } from "@/components/ResizableDataTable";
+import { useTableColumnWidths } from "@/hooks/useTableColumnWidths";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -104,6 +103,7 @@ export function Reviews({
   const [output, setOutput] = useState<ReturnType<
     typeof buildMonthlyTeamOutput
   > | null>(null);
+  const { widths: teamWidths, resize: resizeTeam } = useTableColumnWidths("team-dashboard", [150, 155, 120, 95, 95, 95, 130]);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -327,16 +327,7 @@ export function Reviews({
           )}
         </div>
         <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {["파트", "이름", "상태", "신규", "진행 중", "종료", ""].map(
-                  (x) => (
-                    <TableHead key={x}>{x}</TableHead>
-                  ),
-                )}
-              </TableRow>
-            </TableHeader>
+          <ResizableDataTable labels={["파트", "이름", "상태", "신규", "진행 중", "종료", ""]} widths={teamWidths} resize={resizeTeam}>
             <TableBody>
               {shown.map((e) => (
                 <TableRow key={e.id}>
@@ -364,7 +355,7 @@ export function Reviews({
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </ResizableDataTable>
         </div>
       </div>
     );

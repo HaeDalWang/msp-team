@@ -18,13 +18,12 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
-  Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ResizableDataTable } from "@/components/ResizableDataTable";
+import { useTableColumnWidths } from "@/hooks/useTableColumnWidths";
 import { toast } from "sonner";
 
 const roles = {
@@ -83,6 +82,7 @@ export function Organization({
   const [partsOpen, setPartsOpen] = useState(false);
   const [newPart, setNewPart] = useState("");
   const canEdit = user.role === "admin";
+  const { widths: organizationWidths, resize: resizeOrganization } = useTableColumnWidths("organization", [260, 140, 120, 140, 125, 115, 80]);
   const dirty =
     (editing !== null && JSON.stringify(draft) !== saved) ||
     (partsOpen && !!newPart.trim());
@@ -284,22 +284,7 @@ export function Organization({
         있습니다.
       </p>
       <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {[
-                "이름",
-                "파트",
-                "역할",
-                "근무 시간",
-                "입사일",
-                "활성 상태",
-                "",
-              ].map((label) => (
-                <TableHead key={label}>{label}</TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
+        <ResizableDataTable labels={["이름", "파트", "역할", "근무 시간", "입사일", "활성 상태", ""]} widths={organizationWidths} resize={resizeOrganization}>
           <TableBody>
             {visible.map((member) => (
               <TableRow key={member.userId}>
@@ -348,7 +333,7 @@ export function Organization({
               </TableRow>
             )}
           </TableBody>
-        </Table>
+        </ResizableDataTable>
       </div>
       <Dialog open={editing !== null} onOpenChange={close}>
         <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-xl">

@@ -201,7 +201,7 @@ test('B organization preserves read access and lets admins edit members and part
   await expect(page.getByText('user', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '구성원 추가' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
-  await page.getByLabel('이름').fill('B 신규 구성원')
+  await page.getByRole('textbox', { name: '이름', exact: true }).fill('B 신규 구성원')
   await page.getByLabel('Slack 사용자 ID').fill('UNEWUSER')
   await page.getByRole('button', { name: '저장', exact: true }).click()
   await expect(page.getByText('B 신규 구성원', { exact: true })).toBeVisible()
@@ -235,8 +235,39 @@ test('B organization does not warn before an edit begins', async t => {
   assert.equal(prompted, false)
 })
 
+test('B organization, customer, and team tables resize by drag and remember widths', async t => {
+  const { page, base } = await browserFixture(t, 'admin')
+  const dragFirstColumn = async label => {
+    const handle = page.getByRole('separator', { name: `${label} 열 너비 조절` }).first()
+    const head = handle.locator('xpath=..')
+    const before = (await head.boundingBox()).width
+    const box = await handle.boundingBox()
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 + 90, box.y + box.height / 2, { steps: 5 })
+    await page.mouse.up()
+    const after = (await head.boundingBox()).width
+    assert.ok(after > before + 50, `${label}: ${before} -> ${after}`)
+    return after
+  }
+  await page.goto(base + '/b/#organization')
+  await expect(page.getByRole('heading', { name: '조직 관리' })).toBeVisible()
+  const saved = await dragFirstColumn('이름')
+  await page.reload()
+  await expect(page.getByRole('heading', { name: '조직 관리' })).toBeVisible()
+  assert.ok(Math.abs((await page.getByRole('separator', { name: '이름 열 너비 조절' }).locator('xpath=..').boundingBox()).width - saved) < 2)
+  await page.getByRole('button', { name: '팀 현황' }).click()
+  await dragFirstColumn('파트')
+  await page.getByRole('button', { name: '담당 고객사' }).click()
+  await page.getByRole('button', { name: '고객사 추가' }).click()
+  await page.getByLabel('고객사 이름').fill('열 조절 고객사')
+  await page.getByRole('button', { name: '고객사 저장' }).click()
+  await page.getByRole('button', { name: 'Close' }).click()
+  await dragFirstColumn('고객사')
+})
+
 test('B monthly digest preserves the upload, analysis and sandbox preview flow', async t => {
-  const sample = { meta: { title: "AWS 월간 What's New", written: '2026.09' }, customer: { eol_eos: [{ service: 'RDS', action: '업그레이드 확인', source_quote: 'AWS original source' }], whats_new: [] }, sales: [], script: {} }
+  const sample = { meta: { title: "AWS 월간 What's New", written: '2026.09' }, customer: { eol_eos: [{ service: 'RDS', action: '업그레이드 확인', source_quote: 'AWS original source' }], whats_new: [] }, sales: [], script: {}, diagnostics: { unverified: { sales: [{ name: 'S3 업데이트', quote: '확인할 원문' }], eol_eos: [], whats_new: [] }, skipped: { sales: [{ title: '요금 안내', reason: 'billing_and_cost' }], customer: [] } } }
   const uploadOrigin = 'https://digest-test.s3.ap-northeast-2.amazonaws.com'
   const invoke = async function* (event) {
     const op = event.rawPath.split('/').at(-1)
@@ -257,6 +288,12 @@ test('B monthly digest preserves the upload, analysis and sandbox preview flow',
   await expect(page.getByRole('status')).toContainText('분석을 완료했습니다')
   assert.equal(uploads, 1)
   await expect(page.locator('[data-key="source_quote"]')).toHaveValue('AWS original source')
+  await page.getByRole('button', { name: '분석 진단' }).click()
+  await expect(page.getByRole('region', { name: '원문 근거 확인 필요' }).getByRole('row')).toHaveCount(2)
+  await expect(page.getByRole('region', { name: '원문 근거 확인 필요' })).toContainText('S3 업데이트')
+  await expect(page.getByRole('region', { name: '분석에서 제외된 항목' })).toContainText('과금·비용 주제')
+  await expect(page.getByRole('region', { name: '리포트 편집기' }).locator('pre')).toHaveCount(0)
+  await page.getByRole('button', { name: '고객용 종료 안내' }).click()
   await page.locator('[data-key="action"]').fill('고객과 점검 일정 협의')
   await page.locator('#digest-preview').click()
   await expect(page.frameLocator('#digest-frame').getByRole('heading')).toHaveText('리포트 미리보기')
