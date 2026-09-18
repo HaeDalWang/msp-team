@@ -1,67 +1,133 @@
 # MSP 주간회고
 
-14~20명 팀의 주간회고·고객사·일정·조직을 관리하는 내부 사이트입니다. Express, PostgreSQL, 브라우저 JavaScript를 사용하며 EC2 한 대의 Docker Compose로 운영합니다.
+팀이 한 주 동안 한 일을 적고, 함께 확인하는 내부 업무 사이트입니다. 회고, 고객사 담당, 근무 일정, 초과근무·대체휴가, 조직 정보를 한곳에서 관리합니다.
 
-## 로컬 개발
+| 하고 싶은 일 | 사용할 메뉴 |
+| --- | --- |
+| 이번 주 일을 적고 제출하기 | 내 회고 작성 |
+| 팀원의 회고를 읽고 댓글 남기기 | 리뷰 |
+| 담당 고객사와 담당자 확인하기 | 담당 고객사 |
+| 근무 일정과 휴일 관리하기 | 일정 관리 |
+| 초과근무를 신청하고 대체휴가 쓰기 | 대체휴가 |
+| 구성원과 파트 관리하기 | 조직 관리 |
+| AWS 월간 자료 만들기 | AWS 월간 What's New |
 
-Node.js 24 LTS와 Docker Compose v2가 필요합니다. Node 버전은 [공식 지원 일정](https://github.com/nodejs/Release#release-schedule)을 따릅니다.
+## 가장 빠르게 실행하기
+
+처음에는 Slack 연결 없이 내 컴퓨터에서 실행할 수 있습니다. Node.js 24 LTS와 Docker Compose v2를 설치한 뒤 아래 순서대로 실행하세요.
 
 ```bash
 cp .env.example .env
-# POSTGRES_PASSWORD, SESSION_SECRET을 생성해 입력하고,
-# LOCAL_DEV_USER_ID에 seed.json에 등록된 사용자 id를 명시합니다.
+```
+
+`.env` 파일에서 아래 세 가지만 바꿉니다.
+
+```dotenv
+POSTGRES_PASSWORD=안전한-DB-비밀번호
+SESSION_SECRET=openssl-rand-hex-32로-만든-긴-문자열
+LOCAL_DEV_USER_ID=seed.json에-있는-내-사용자-id
+DESIGN_B_ENABLED=true
+```
+
+`SESSION_SECRET`은 터미널에서 `openssl rand -hex 32`를 실행해 만들 수 있습니다. `LOCAL_DEV_USER_ID`는 **내 컴퓨터에서만** 쓰는 임시 로그인 설정입니다.
+
+```bash
 docker compose up --build -d --wait
 curl --fail http://localhost:3000/health
+```
+
+`{"ok":true}`가 나오면 브라우저에서 [http://localhost:3000](http://localhost:3000)을 여세요. 새 화면은 [http://localhost:3000/b/](http://localhost:3000/b/)입니다. 컨테이너를 멈추려면 `docker compose down`을 실행합니다.
+
+## 두 가지 화면
+
+기존 화면(A)과 새 화면(B)은 같은 데이터와 같은 권한을 사용합니다. 화면만 다릅니다.
+
+- `DESIGN_B_ENABLED=true`: `/b/`에서 새 화면(B)을 엽니다.
+- `DESIGN_B_ENABLED=false`: 새 화면을 숨기고 기존 화면(A)으로 돌려보냅니다.
+- 운영에서는 B를 사용하려면 `.env`에 `DESIGN_B_ENABLED=true`를 넣습니다.
+
+## Slack 로그인은 언제 필요한가요?
+
+운영 사이트는 Slack으로 로그인합니다. Slack 앱의 Redirect URL에 아래 주소를 등록하고 `.env`에 Client ID와 Secret을 넣으세요.
+
+```text
+https://내-도메인/auth/slack/callback
+```
+
+로컬에서 Slack 로그인도 시험하려면 `http://localhost:3000/auth/slack/callback`을 Slack 앱에 추가합니다. 운영에서는 `LOCAL_DEV_USER_ID`를 비워야 합니다.
+
+선택으로 `users.profile:read` 봇 권한과 `SLACK_PROFILE_TOKEN`을 설정할 수 있습니다. 이 경우 로그인 때 Slack의 이메일·전화번호·입사일을 **비어 있는** 사이트 프로필에만 채웁니다. 이미 입력한 정보는 바꾸지 않습니다.
+
+## 데이터는 이렇게 다룹니다
+
+- 회고는 사람과 주차별로 저장합니다. 임시 저장, 제출, 검토 완료를 구분하고 댓글도 보관합니다.
+- 파트와 구성원은 조직 관리에서 바꿉니다. `seed.json`은 빈 데이터베이스를 처음 만들 때만 사용합니다.
+- 일정은 한 달 단위로 관리합니다. 승인된 대체휴가는 일정에 함께 보입니다.
+- 초과근무는 실제 시간만큼 적립되고, 대체휴가는 4시간 또는 8시간으로 신청합니다.
+- 관리자와 팀장은 조직 관리, 휴일 관리, 초과근무·휴가 승인, 회고 검토를 처리합니다. 각 사용자는 자신의 회고·프로필·신청을 관리합니다.
+
+공휴일 기본 자료는 `public/koreanHolidays.js`에 있습니다. 현재 2025–2027년을 지원합니다. 임시공휴일처럼 갑자기 생긴 휴일은 관리자 또는 팀장이 `일정 관리 → 휴일 관리`에서 추가합니다.
+
+## AWS 월간 What's New
+
+이 메뉴에서는 AWS 자료 PDF를 분석하고, 고객용·영업용 문서와 발표 대본을 편집해 미리보기·PDF·ZIP·JSON으로 받을 수 있습니다. 화면에서 편집 영역과 문서 미리보기의 사이 막대를 드래그해 넓이도 조절할 수 있습니다.
+
+AWS 연결 설정이 아직 없으면 편집과 JSON 저장은 가능하지만 PDF 분석·다운로드·Slack 전송은 준비 상태로 표시됩니다. 이 기능은 기존 EC2와 DB를 그대로 쓰고, 무거운 PDF 분석은 별도의 Python Lambda가 처리합니다. 자세한 연결·배포 절차는 [월간 리포트 서비스 문서](services/monthly-digest/README.md)를 보세요.
+
+## 테스트하기
+
+서버 동작을 확인합니다.
+
+```bash
 npm ci
 npm test
 ```
 
-로컬 앱은 기본적으로 `127.0.0.1:3000`에만 바인딩합니다. Slack 설정이 없다는 이유로 인증이 자동 해제되지 않습니다. `LOCAL_DEV_USER_ID`는 개발에서만 사용하며 운영에서는 허용하지 않습니다. Slack으로 개발할 경우 Client ID/Secret과 localhost callback을 설정합니다.
+브라우저 화면까지 확인하려면 처음 한 번만 Chromium을 설치한 뒤 실행합니다.
 
-## 기능과 데이터 기준
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
 
-- 회고는 사용자·주차별 DB에 저장하며 임시 저장, 제출, 검토 상태를 구분합니다. 댓글도 DB에 보관합니다.
-- 월간 집계는 저장된 회고를 사용합니다. API 오류는 오류로 표시하며 예제 데이터로 대체하지 않습니다.
-- 파트와 구성원 목록은 DB가 기준입니다. seed는 사용자가 없는 DB에 최초 한 번만 적용합니다. 이후 구성원 등록·변경은 조직 관리 화면에서 수행하므로 삭제한 파트가 재시작 시 되살아나지 않습니다.
-- 주차는 한국 시간 기준 이번 월요일로 선택하고, 표시 기간은 월요일부터 다음 월요일입니다. 직책·파트가 바뀌어도 저장된 회고는 조회합니다. 댓글 초안은 페이지가 열린 동안 사람·주차별로 보존하며 페이지를 떠날 때 경고합니다.
-- 일정은 월별 조회·편집하며 최대 31일(주말 포함)을 일괄 적용할 수 있습니다. 기존 일정·메모 덮어쓰기는 확인 후 실행합니다. 승인된 대체휴가는 달력에 별도 합성하여 표시하고 기존 일정과 겹치면 함께 안내합니다.
-- 초과근무는 30분 단위로 등록하고 실제 경과 시간을 1:1로 적립합니다. 종료가 더 이르면 다음 날로 계산합니다. 대체휴가는 4시간/8시간으로 신청하며, 사용 승인 대기분을 뺀 신청 가능 시간 내에서만 접수됩니다. 별도 가산 배율·만료 정책은 적용하지 않습니다.
-- 초과근무와 휴가는 팀장·관리자가 승인·반려합니다. 승인 취소는 사유·처리자·시각과 기존 승인 정보를 보존합니다. 사용되었거나 신청 대기 중인 시간을 침범하는 초과근무 취소는 차단합니다. 취소 후 올바른 내용으로 새 신청할 수 있습니다. 본인의 미승인·반려 신청만 삭제할 수 있습니다.
+새 화면(B)만 빌드하려면 다음 명령을 사용합니다.
 
-### 공휴일 자료 갱신
+```bash
+cd frontend-b
+npm ci
+npm run build
+```
 
-기본 자료는 `public/koreanHolidays.js`의 2025–2027년 목록입니다. 지원 밖 연도에는 고정일 공휴일만 표시되므로 화면에 경고합니다. 공휴일 자동 동기화와 Zendesk 연동은 제공하지 않습니다.
+## EC2에 배포하기
 
-매년 11월 운영 담당자가 다음 연도 정부 공식 월력요항의 설·추석·대체공휴일을 확인해 연도별 자료와 테스트를 갱신하고 배포합니다. 임시공휴일 등 중간 변경은 관리자·팀장이 ‘일정 관리 → 휴일 관리’에서 즉시 등록합니다. 이 목록의 지원 연도가 해당 연도의 모든 임시 변경까지 반영되었다는 뜻은 아닙니다.
+운영 배포는 두 단계입니다. 먼저 Terraform으로 EC2·네트워크·S3 같은 기반을 준비하고, 다음으로 그 EC2에서 앱을 실행합니다.
 
-모든 업무 API는 인증을 요구합니다. 본인 회고와 시간외 근무 신청의 작성자는 세션으로 결정합니다. 고객사는 로그인한 팀원이 공동 관리하고, 일정은 본인 또는 관리자/팀장이 수정합니다. 조직 편집은 관리자, 휴일 관리·시간외 근무 승인은 관리자/팀장 권한을 사용합니다. 댓글은 로그인한 팀원 누구나 작성하고 제출한 회고의 검토 완료는 팀장·관리자가 처리합니다. 최종 권한과 계정 활성 상태는 매 요청마다 서버가 DB에서 검사합니다.
+1. `terraform/terraform.tfvars.example`을 복사해 인프라 값만 입력합니다. 비밀값은 tfvars에 넣지 않습니다.
+2. `bash scripts/quickstart.sh`로 plan을 확인한 후 Terraform 디렉터리에서 apply합니다.
+3. Terraform이 알려 준 SSM 명령으로 EC2에 접속합니다. 기본 설정에서는 SSH를 열지 않습니다.
+4. 도메인의 A 레코드를 EC2 공인 IP에 연결합니다.
+5. Slack 앱에 `https://<도메인>/auth/slack/callback`을 Redirect URL로 등록합니다.
 
-Slack 앱에 `users.profile:read` 봇 권한을 부여하고 `SLACK_PROFILE_TOKEN`을 설정하면 로그인 시 Slack 이메일·전화번호와, Slack API가 제공하는 경우의 Start Date를 사이트 프로필의 빈 값에만 기본 입력합니다. 사이트에 이미 저장된 값은 덮어쓰지 않으며 Slack 프로필 조회 실패도 로그인을 막지 않습니다. 로그인용 `openid profile email`은 사용자 토큰 범위에, `users.profile:read`는 봇 토큰 범위에 각각 설정합니다. Slack의 기본 `start_date`는 Slack Atlas가 활성화된 워크스페이스에서만 제공되며, 별도의 커스텀 날짜 필드는 자동 연결하지 않습니다.
+처음 배포할 때는 아래 값을 EC2의 환경변수로 준비한 뒤 스크립트를 실행합니다. 비밀값은 쉘 이력에 남기지 않는 보안 입력 방식으로 설정하세요. 스크립트가 `/opt/msp-weekly-review/.env`를 권한 600으로 만듭니다.
 
-## 운영 배포: 인프라와 앱 2단계
-
-운영 도메인이 있는 HTTPS 구성을 `compose.production.yaml`로 제공합니다. 이 구성은 선택 사항이며 실제 배포 전에 팀의 외부 접근/사내망 정책을 확정하세요. 공인 인증서 자동 발급에는 도메인 DNS가 서버를 가리키고 80/443 접근이 가능해야 합니다. 사내망 제한 환경에서는 별도의 인증서 발급 방식이 필요할 수 있습니다.
-
-1. `terraform/terraform.tfvars.example`을 복사해 인프라 값만 설정합니다. 비밀값을 tfvars에 넣지 않습니다.
-2. `bash scripts/quickstart.sh`로 plan을 생성·검토하고 Terraform 디렉터리에서 apply합니다.
-3. 출력된 `ssm_command`로 접속합니다. 최초 부팅은 Docker와 저장소만 준비하며 앱은 아직 실행되지 않습니다.
-4. 도메인의 A 레코드를 `app_public_ip`에 연결합니다. 재시작에도 IP를 고정하려면 `allocate_elastic_ip=true`를 선택합니다(기본 false, 공인 IPv4 과금 확인).
-5. Slack App에 `https://<도메인>/auth/slack/callback`을 Redirect URL로 등록합니다.
-
-EC2에서 아래 환경변수를 설정한 뒤 실행합니다. 비밀값은 쉘 이력에 남기지 않도록 보안 입력 방식으로 설정하세요.
+```dotenv
+APP_DOMAIN=서비스-도메인
+POSTGRES_PASSWORD=안전한-DB-비밀번호
+SESSION_SECRET=openssl-rand-hex-32로-만든-긴-문자열
+SLACK_CLIENT_ID=Slack-Client-ID
+SLACK_CLIENT_SECRET=Slack-Client-Secret
+ALLOWED_SLACK_TEAM_ID=허용할-Slack-workspace-id
+BACKUP_S3_BUCKET=Terraform-출력-버킷명
+DESIGN_B_ENABLED=true
+```
 
 ```bash
 cd /opt/msp-weekly-review
-# 필요한 환경변수:
-# APP_DOMAIN, POSTGRES_PASSWORD (openssl rand -hex 24)
-# SESSION_SECRET (openssl rand -hex 32)
-# SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, ALLOWED_SLACK_TEAM_ID
-# BACKUP_S3_BUCKET (Terraform 출력값)
 bash scripts/deploy-app.sh
 curl --fail https://<도메인>/health
 ```
 
-배포 스크립트는 최초 `.env`를 권한 600으로 작성하고 HTTPS overlay를 사용합니다. 기존 `.env`가 있으면 덮어쓰지 않습니다. 기존 운영 환경은 `.env`에 `COMPOSE_FILE=compose.yaml:compose.production.yaml`, `APP_DOMAIN`, `NODE_ENV=production`, `APP_BIND_ADDRESS=127.0.0.1`, HTTPS `SLACK_REDIRECT_URI`를 설정하고 `LOCAL_DEV_USER_ID`를 제거한 뒤 아래 재배포 명령을 사용합니다. 기존 DB 비밀번호는 변경하지 마세요.
+이미 실행 중인 서버를 최신 코드로 갱신할 때는 다음을 실행합니다. 기존 `.env`와 DB 비밀번호는 그대로 둡니다.
 
 ```bash
 git pull --ff-only
@@ -69,35 +135,32 @@ docker compose up --build -d --wait
 docker compose ps
 ```
 
-SSH는 기본 닫혀 있으며 SSM으로 관리합니다. 필요할 때만 `ssh_key_name`과 `ssh_allowed_cidrs`를 함께 지정하세요. `web_allowed_cidrs`로 웹 접근 범위를 제한할 수 있습니다. Terraform apply, 배포, DNS 변경은 코드 수정과 별개의 운영 작업입니다.
+HTTPS를 쓰려면 DNS가 서버를 가리키고 80·443 포트에 접근할 수 있어야 합니다. 배포 스크립트는 `.env`를 권한 600으로 만듭니다.
 
-## 검수된 초기 데이터 적재
+## 운영 데이터: 적재와 백업
 
-검수된 고객사·초과근무·대체휴가 JSON은 민감한 운영 데이터이므로 저장소에 커밋하지 않습니다. 기본 명령은 DB를 변경하지 않고 추가/기존 건수만 보여줍니다.
+검수한 초기 JSON을 먼저 확인만 하려면 아래 명령을 사용합니다. 이 단계에서는 DB가 바뀌지 않습니다.
 
 ```bash
 docker compose exec -T app npm run data:initial -- --file - < /secure/path/approved-initial-data.json
 ```
 
-출력을 확인하고 백업을 생성한 뒤에만 적용합니다.
+출력과 백업을 확인한 뒤 실제로 반영합니다.
 
 ```bash
 docker compose exec -T app npm run data:initial -- --file - --apply < /secure/path/approved-initial-data.json
 ```
 
-적재는 하나의 트랜잭션으로 실행되고 재실행해도 동일한 기록을 추가하지 않습니다. 이미 있는 동일명 고객사의 속성과 담당 배정은 모두 보존하고 `건너뜀`으로 보고합니다. 적용 후 건별 되돌리기는 제공하지 않으므로 문제가 있으면 적용 직전 백업을 복구합니다.
-
-## 백업과 복구
+S3 백업과 복구 명령은 다음과 같습니다. `latest` 대신 백업 파일명이나 전체 S3 key를 넣을 수도 있습니다.
 
 ```bash
 BACKUP_S3_BUCKET=<버킷> bash scripts/backup.sh
 BACKUP_S3_BUCKET=<버킷> bash scripts/restore.sh latest
-# latest 대신 파일명 또는 전체 S3 key도 가능
 ```
 
-백업은 `pg_dump` custom 형식으로 S3에 올립니다. 실패하면 오류 종료하며 임시 파일을 정리합니다. 기본 S3 보존 기간은 30일입니다. 복구는 사용자 확인 후 현재 DB를 먼저 백업하고 앱을 중지한 상태에서 단일 트랜잭션으로 수행합니다. SQL 오류 시 전체 복구가 롤백되고, 원래 실행 중이던 앱은 다시 시작합니다. 복구 완료 뒤 health와 로그인을 확인하세요.
+복구는 현재 DB를 먼저 백업하고 앱을 멈춘 뒤 진행합니다. 실제 운영 복구 전에는 별도 테스트 DB에서 한 번 확인하세요.
 
-EC2에서 매일 한국 시각 03시경 실행하려면:
+매일 한국 시각 03시경 자동 백업하려면 EC2에서 다음을 한 번 설정합니다.
 
 ```bash
 sudo install -m 600 /dev/null /etc/msp-weekly-review-backup.env
@@ -107,22 +170,20 @@ sudoedit /etc/msp-weekly-review-backup.env
 sudo install -m 644 scripts/systemd/msp-weekly-review-backup.* /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now msp-weekly-review-backup.timer
-sudo systemctl start msp-weekly-review-backup.service
-sudo journalctl -u msp-weekly-review-backup.service --no-pager
 ```
 
-timer 설정만으로 백업 성공이 보장되지는 않습니다. 최초 실행 성공과 S3 파일을 확인하고 복구를 별도 테스트 DB에서 정기적으로 확인하세요. EC2의 AWS CLI 및 S3 접근 IAM role이 필요합니다.
+설정 뒤에는 `sudo systemctl start msp-weekly-review-backup.service`로 한 번 실행하고, S3에 백업 파일이 생겼는지 확인하세요.
 
-## AWS 월간 What's New
+## 폴더 안내
 
-`AWS 월간 What's New` 메뉴에서 PDF 분석, 고객용·영업용 편집, 발표 대본, 미리보기, PDF/ZIP/JSON 다운로드와 선택 파일 Slack 공유를 제공합니다. 연결 설정이 비어 있으면 준비 상태를 표시하고 JSON 불러오기·편집·저장만 사용할 수 있습니다. 기존 EC2와 DB를 유지하며 무거운 분석/PDF 작업은 별도 Python Lambda에서 수행합니다. [통합 구조와 배포 절차](services/monthly-digest/README.md)를 참고하세요.
+| 폴더 | 내용 |
+| --- | --- |
+| `src/` | Express 서버, Slack 인증, DB 규칙 |
+| `frontend-b/` | 새 화면(B)의 React 코드 |
+| `public/` | 기존 화면(A)과 정적 자료 |
+| `test/`, `e2e/` | 서버·브라우저 테스트 |
+| `scripts/`, `terraform/` | 배포, 백업, AWS 기반 구성 |
+| `services/monthly-digest/` | AWS 월간 리포트 Lambda |
+| `developer/` | 실행에 쓰지 않는 개발 문서와 시안 |
 
-## 코드 유지보수
-
-`src/`는 서버·인증·스키마, `public/`는 화면, `test/`는 동작 테스트, `scripts/`와 `terraform/`는 운영 구성입니다. 마이그레이션은 기존 데이터를 보존하며 재실행 가능해야 합니다. `.env`, tfvars, state, plan, 백업에는 민감 정보가 포함될 수 있으므로 커밋하지 않습니다. `seed.json`에도 팀원 정보가 있으므로 공개 공유 전에 확인하세요.
-
-`npm test`는 Docker로 일회용 PostgreSQL 컨테이너를 띄우고 테스트별 임시 스키마에서 검증한 뒤 컨테이너를 정리합니다. 기존 앱·DB는 사용하지 않습니다. `TEST_DATABASE_URL`을 명시하면 해당 테스트 DB 안에 임시 스키마를 만들고 삭제합니다. 운영 DB URL을 지정하지 마세요.
-
-브라우저 검증은 `npx playwright install chromium`을 한 번 실행하고 `npm run test:e2e`로 수행합니다. 회고 임시 저장·제출·재조회·댓글·검토·월간 집계, 고객사 변경·이관, 새 파트·일정 사유, 초과근무·휴가 승인 흐름을 검증합니다. `npm run test:coverage`는 Node에서 실행한 코드의 커버리지를 표시하며 브라우저의 app.js 커버리지는 포함하지 않습니다.
-
-운영 파일 변경 시 각 스크립트의 `bash -n`, `terraform fmt -check`, `terraform validate`도 수행합니다. 실제 Slack 로그인, 도메인/DNS, 운영 배포, S3 백업·복구는 각 운영 환경에서 별도로 확인해야 합니다.
+`.env`, Terraform state·plan·tfvars, 백업 파일에는 비밀값이나 운영 정보가 들어갈 수 있습니다. 커밋하거나 외부에 공유하지 마세요. `seed.json`에도 팀원 정보가 있을 수 있으니 공유 전에 확인하세요.
