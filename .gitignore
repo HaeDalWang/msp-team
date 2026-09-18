@@ -1,4 +1,6 @@
 node_modules/
+public/b/
+frontend-b/dist/
 .env
 terraform/.terraform/
 terraform/*.tfstate

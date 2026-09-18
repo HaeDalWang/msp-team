@@ -140,6 +140,7 @@ const state = {
     otherNotes: false,
   },
   toast: '',
+  bAvailable: false,
   entries: [],
   previousEntries: [],
   reviewSnapshots: [],
@@ -150,6 +151,7 @@ const state = {
   version: 0,
   commentBusy: false,
 }
+let initializing = true
 function initialWeek() {
   const value = new URL(location.href).searchParams.get('week')
   const date =
@@ -309,6 +311,10 @@ function render() {
   )
   document.documentElement.dataset.theme = state.light ? 'light' : 'dark'
   const root = document.querySelector('#root')
+  if (initializing) {
+    root.innerHTML = '<div class="auth-gate" role="status">화면을 불러오는 중…</div>'
+    return
+  }
   const scrollSelectors = ['.management-page', '.owner-board', '.review-scroll', '.people-rail', '.review-panel', '.structured-editor', '.all-reviews', '.schedule-table-wrap', '.engineer-overview-table', '.digest-editor-scroll', '.digest-preview-scroll', ...reviewFields.map((field) => `textarea[data-field="${field}"]`), '#comment-draft', '#schedule-note']
   scrollSelectors.push('.comp-table-wrap')
   const scrollPositions = scrollSelectors.flatMap((selector) =>
@@ -370,6 +376,7 @@ function topbar() {
       ${tabs.map(([id, iconName, label]) => `<button data-view="${id}" class="${state.view === id ? 'active' : ''}">${icon(iconName, 16)} ${label}</button>`).join('')}
     </nav>
     ${['review', 'dashboard'].includes(state.view) ? `<label class="searchbox">${icon('Search', 16)}<input id="query-input" value="${escapeAttr(state.query)}" aria-label="선택한 주의 회고 검색" placeholder="이번 주 회고 · 이름 검색"><kbd>/</kbd></label>` : ''}
+    ${state.bAvailable ? '<div class="design-switch"><span>기존 디자인 A</span><button id="design-b" type="button">새 디자인 B</button></div>' : ''}
     <div class="settings-menu">
       <button class="icon-button" id="settings-toggle" aria-label="설정" aria-expanded="${state.settingsOpen}">${icon('Settings', 17)}</button>
       ${
@@ -808,6 +815,17 @@ document.addEventListener('click', () => {
 })
 
 function bindEvents(root) {
+  root.querySelector('#design-b')?.addEventListener('click', () => {
+    if (state.saving || state.commentBusy || state.profileBusy || managementDrafts[state.view]?.[2]()) return
+    const unsaved = state.dirty || Object.values(state.commentDrafts).some(text => text.trim()) || (state.profile && JSON.stringify(state.profile) !== state.profileSaved) || managementDrafts[state.view]?.[0]()
+    if (unsaved && !window.confirm('저장하지 않은 입력이 있습니다. 변경 내용을 버리고 새 디자인으로 이동할까요?')) return
+    if (managementDrafts[state.view]?.[0]()) managementDrafts[state.view][1]()
+    state.dirty = false
+    state.commentDrafts = {}
+    state.profile = null
+    try { localStorage.setItem('msp-design', 'b') } catch { /* Storage may be unavailable. */ }
+    location.href = `/b/?week=${encodeURIComponent(state.reviewEnd)}#${state.view}`
+  })
   const choosePerson = (id) => {
     state.selectedName = id
     loadComments()
@@ -1178,15 +1196,28 @@ async function saveReview(status) {
 
 async function init() {
   await loadSession()
-  render()
+  try {
+    const result = await fetch('/api/design').then(response => response.json())
+    state.bAvailable = result.bAvailable === true
+  } catch { state.bAvailable = false }
+  if (authState.user) {
+    let destination = ''
+    try { destination = sessionStorage.getItem('msp-return-to') ?? ''; sessionStorage.removeItem('msp-return-to') } catch { /* Storage may be unavailable. */ }
+    if (state.bAvailable && /^\/b\/\?week=\d{4}-\d{2}-\d{2}#[a-z-]+$/.test(destination)) { location.replace(destination); return }
+    let preferred = ''
+    try { preferred = localStorage.getItem('msp-design') ?? '' } catch { /* Storage may be unavailable. */ }
+    if (state.bAvailable && preferred === 'b' && new URLSearchParams(location.search).get('design') !== 'a') { location.replace(`/b/${location.search}${location.hash}`); return }
+  }
+  if (new URLSearchParams(location.search).has('design')) { const url = new URL(location.href); url.searchParams.delete('design'); history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`) }
   if (authState.user) {
     await ensureReviewEntries()
     const loader = viewLoaders[state.view]
     if (loader) {
       await loader()
-      render()
     }
   }
+  initializing = false
+  render()
 }
 
 init()

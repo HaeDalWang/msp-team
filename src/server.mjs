@@ -2,6 +2,7 @@ import express from 'express'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { existsSync } from 'node:fs'
 import { connectDatabase, transaction } from './db.mjs'
 import {
   registerAuthRoutes,
@@ -98,6 +99,10 @@ export function createApp(pool, env = process.env, { monthlyDigestInvoke } = {})
       )
   }
   const app = express()
+  const designBAvailable = () =>
+    (env.DESIGN_B_ENABLED === 'true' ||
+      (env.NODE_ENV !== 'production' && env.DESIGN_B_ENABLED !== 'false')) &&
+    existsSync(join(here, '..', 'public', 'b', 'index.html'))
   const uploadOrigin = env.MONTHLY_DIGEST_UPLOAD_ORIGIN || ''
   if (uploadOrigin && !/^https:\/\/[a-z0-9][a-z0-9-]*\.s3\.[a-z0-9-]+\.amazonaws\.com$/.test(uploadOrigin))
     throw new Error('MONTHLY_DIGEST_UPLOAD_ORIGIN은 리포트 S3 버킷의 HTTPS origin이어야 합니다.')
@@ -122,6 +127,42 @@ export function createApp(pool, env = process.env, { monthlyDigestInvoke } = {})
     } catch {
       res.status(503).json({ ok: false })
     }
+  })
+  app.get('/api/design', (_req, res) =>
+    res.json({ bAvailable: designBAvailable() }),
+  )
+  app.get('/b', (req, res, next) => {
+    if (req.path !== '/b') return next()
+    const query = new URL(req.originalUrl, 'http://localhost').search
+    res.redirect(302, `/b/${query}`)
+  })
+  app.get(['/', '/b/'], (req, res, next) => {
+    const query = new URL(req.originalUrl, 'http://localhost').searchParams
+    const choice = query.get('design')
+    if (choice === 'a' && req.path === '/b/')
+      return res.redirect(302, `/${query.size ? `?${query}` : ''}`)
+    if (choice === 'b' && req.path === '/') {
+      query.delete('design')
+      return res.redirect(
+        302,
+        designBAvailable()
+          ? `/b/${query.size ? `?${query}` : ''}`
+          : `/${query.size ? `?${query}&` : '?'}design=a`,
+      )
+    }
+    if (req.path === '/b/' && !designBAvailable()) {
+      query.set('design', 'a')
+      return res.redirect(302, `/?${query}`)
+    }
+    if (choice === 'b' && req.path === '/b/') {
+      query.delete('design')
+      return res.redirect(302, `/b/${query.size ? `?${query}` : ''}`)
+    }
+    if (query.has('design') && choice !== 'a' && choice !== 'b') {
+      query.delete('design')
+      return res.redirect(302, `${req.path}${query.size ? `?${query}` : ''}`)
+    }
+    next()
   })
   registerAuthRoutes(app, pool, env)
   app.use('/api', requireSession(env, pool))

@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV:-development}
+      DESIGN_B_ENABLED: ${DESIGN_B_ENABLED:-false}
       LOCAL_DEV_USER_ID: ${LOCAL_DEV_USER_ID:-}
       PORT: 3000
       DATABASE_URL: postgresql://msp:${POSTGRES_PASSWORD}@db:5432/msp

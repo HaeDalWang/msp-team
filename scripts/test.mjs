@@ -50,7 +50,7 @@ try {
   child = spawn(
     process.execPath,
     args.includes('--e2e')
-      ? ['--test', 'e2e/site.test.mjs']
+      ? ['--test', 'e2e/site.test.mjs', 'e2e/design-b.test.mjs']
       : ['--test', ...args, 'test/*.test.mjs'],
     { env, stdio: 'inherit' },
   )

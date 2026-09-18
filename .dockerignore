@@ -3,6 +3,8 @@
 .env.*
 terraform
 node_modules
+**/node_modules
+public/b
 test
 *.dump
 *.log
