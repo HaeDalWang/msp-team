@@ -382,26 +382,36 @@ export function Schedule({
         평일 기본값은 출근입니다. 승인된 대체휴가와 일정은 함께 표시되며, 휴가
         취소는 대체휴가 원장에서 처리합니다.
       </p>
-      <div className="hidden overflow-x-auto md:block">
-        <Table className="min-w-max">
+      <div className="b-schedule-table hidden min-w-0 md:block">
+        <Table
+          className="table-fixed"
+          style={{ width: `${19.5 + days.length * 5.25}rem` }}
+        >
+          <colgroup>
+            <col className="b-schedule-part" />
+            <col className="b-schedule-name" />
+            <col className="b-schedule-hours" />
+            {days.map((date) => <col key={date} className="b-schedule-day" />)}
+          </colgroup>
           <TableHeader>
             <TableRow>
-              <TableHead className="sticky left-0 z-10 bg-background">
+              <TableHead className="b-schedule-part">
                 파트
               </TableHead>
-              <TableHead className="sticky left-20 z-10 bg-background">
+              <TableHead className="b-schedule-name">
                 이름
               </TableHead>
-              <TableHead className="sticky left-40 z-10 bg-background">
+              <TableHead className="b-schedule-hours">
                 근무 시간
               </TableHead>
               {days.map((date) => (
                 <TableHead
                   key={date}
+                  data-date={date}
                   className={
                     isWeekend(date) || allHolidays.has(date)
-                      ? "min-w-16 text-destructive"
-                      : "min-w-16"
+                      ? "text-destructive"
+                      : undefined
                   }
                 >
                   <strong>{date.slice(-2)}</strong>
@@ -419,13 +429,13 @@ export function Schedule({
           <TableBody>
             {visibleMembers.map((member) => (
               <TableRow key={member.id}>
-                <TableCell className="sticky left-0 bg-background">
+                <TableCell className="b-schedule-part">
                   {member.part ?? "무소속"}
                 </TableCell>
-                <TableCell className="sticky left-20 bg-background font-medium">
+                <TableCell className="b-schedule-name font-medium">
                   {member.name}
                 </TableCell>
-                <TableCell className="sticky left-40 bg-background text-xs whitespace-nowrap">
+                <TableCell className="b-schedule-hours text-xs">
                   {member.workStart}–{member.workEnd}
                 </TableCell>
                 {days.map((date) => {

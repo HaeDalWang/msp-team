@@ -89,7 +89,24 @@ test('B schedule saves the team calendar and keeps approved leave visible', asyn
   await page.goto(base + '/b/#schedule')
   await expect(page.getByRole('heading', { name: '일정 관리' })).toBeVisible()
   await expect(page.getByText('B 일정 메모')).toHaveCount(0)
+  const firstDayVisible = async () => page.evaluate(() => {
+    const scroller = document.querySelector('.b-schedule-table [data-slot="table-container"]')
+    const hours = scroller.querySelector('thead .b-schedule-hours').getBoundingClientRect()
+    const day = scroller.querySelector('thead [data-date$="-01"]').getBoundingClientRect()
+    const topElement = document.elementFromPoint(day.left + day.width / 2, day.top + day.height / 2)
+    return {
+      startsAfterHours: day.left >= hours.right - 1,
+      insideScroller: day.right <= scroller.getBoundingClientRect().right + 1,
+      uncovered: Boolean(topElement?.closest('thead [data-date$="-01"]')),
+    }
+  })
+  assert.deepEqual(await firstDayVisible(), { startsAfterHours: true, insideScroller: true, uncovered: true })
+  await page.locator('.b-schedule-table [data-slot="table-container"]').evaluate(element => { element.scrollLeft = 500; element.scrollLeft = 0 })
+  assert.deepEqual(await firstDayVisible(), { startsAfterHours: true, insideScroller: true, uncovered: true })
   const row = page.getByRole('row').filter({ hasText: 'user' })
+  await row.getByRole('button').first().click()
+  await expect(page.getByRole('dialog')).toContainText('2026-09-01')
+  await page.keyboard.press('Escape')
   await row.getByRole('button').nth(16).click()
   await page.getByLabel('일정 유형').selectOption('외근·출장')
   await page.getByLabel('사유').fill('B에서 수정한 일정')

@@ -173,6 +173,20 @@ body { min-width: 0; margin: 0; background: var(--background); color: var(--fore
 .b-app [data-slot="table-header"] { background: var(--muted); }
 .b-app [data-slot="table-head"], .b-app [data-slot="table-cell"] { padding-inline: 0.8rem; }
 .b-app [data-slot="table-cell"] { padding-block: 0.65rem; }
+.b-schedule-table { --schedule-part-width: 6rem; --schedule-name-width: 6rem; --schedule-hours-width: 7.5rem; --schedule-day-width: 5.25rem; }
+.b-schedule-table col.b-schedule-part { width: var(--schedule-part-width); }
+.b-schedule-table col.b-schedule-name { width: var(--schedule-name-width); }
+.b-schedule-table col.b-schedule-hours { width: var(--schedule-hours-width); }
+.b-schedule-table col.b-schedule-day { width: var(--schedule-day-width); }
+.b-schedule-table :is(th, td).b-schedule-part,
+.b-schedule-table :is(th, td).b-schedule-name,
+.b-schedule-table :is(th, td).b-schedule-hours { position: sticky; z-index: 2; overflow: hidden; background: var(--card); text-overflow: ellipsis; }
+.b-schedule-table :is(th, td).b-schedule-part { left: 0; }
+.b-schedule-table :is(th, td).b-schedule-name { left: var(--schedule-part-width); }
+.b-schedule-table :is(th, td).b-schedule-hours { left: calc(var(--schedule-part-width) + var(--schedule-name-width)); box-shadow: inset -1px 0 var(--border); }
+.b-schedule-table thead :is(th, td).b-schedule-part,
+.b-schedule-table thead :is(th, td).b-schedule-name,
+.b-schedule-table thead :is(th, td).b-schedule-hours { z-index: 3; background: var(--muted); }
 .b-app [data-slot="sheet-content"] { background: var(--card); }
 .review-columns { display: grid; grid-template-columns: minmax(180px, 196px) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
 .review-people { position: sticky; top: 1rem; max-height: calc(100svh - 2rem); overflow-y: auto; }
