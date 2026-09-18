@@ -80,6 +80,17 @@
     --sidebar-accent-foreground: #373b76;
     --sidebar-border: #e2e4ec;
     --sidebar-ring: #5e6ad2;
+    --action-primary-hover: #4b57b3;
+    --action-primary-pressed: #3e4899;
+    --surface-hover: #e9ebf4;
+    --border-hover: #a6abc0;
+    --focus-ring: #34449f;
+    --status-success-bg: #e9f5ed;
+    --status-success-text: #236344;
+    --status-warning-bg: #fff3dd;
+    --status-warning-text: #795015;
+    --status-danger-bg: #fbe9e8;
+    --status-danger-border: #d1544e;
 }
 
 .dark {
@@ -114,6 +125,17 @@
     --sidebar-accent-foreground: #e6e8ff;
     --sidebar-border: #2c2e3a;
     --sidebar-ring: #8a95fb;
+    --action-primary-hover: #4d58b5;
+    --action-primary-pressed: #3e4899;
+    --surface-hover: #303443;
+    --border-hover: #737b98;
+    --focus-ring: #bec6ff;
+    --status-success-bg: #183829;
+    --status-success-text: #9dd9b4;
+    --status-warning-bg: #42341d;
+    --status-warning-text: #f1ca80;
+    --status-danger-bg: #452527;
+    --status-danger-border: #ec8f8a;
 }
 
 @layer base {
@@ -145,21 +167,41 @@ body { min-width: 0; margin: 0; background: var(--background); color: var(--fore
 .b-app [data-slot="sidebar-menu-button"][data-active="true"] svg { color: var(--primary); }
 .b-sidebar-footer { gap: 0.15rem; }
 .b-user { display: flex; width: 100%; align-items: center; gap: 0.6rem; margin-bottom: 0.25rem; padding: 0.45rem 0.5rem; border: 0; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; text-align: left; }
-.b-user:hover, .b-user:focus-visible { background: var(--sidebar-accent); outline: none; }
+.b-user:hover { background: var(--sidebar-accent); }
+.b-user:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 .b-user-avatar { display: grid; flex: none; width: 28px; height: 28px; place-items: center; border: 1px solid var(--sidebar-border); border-radius: 50%; background: var(--sidebar-accent); color: var(--sidebar-accent-foreground); font-size: 0.76rem; font-weight: 600; }
 .b-topbar { position: sticky; top: 0; z-index: 20; background: var(--card); border-color: var(--border); }
 .b-topbar h1 { letter-spacing: -0.035em; }
 .b-page-kicker { margin-bottom: 0.1rem; }
 .b-content { width: 100%; max-width: 1600px; margin-inline: auto; }
-.b-design-switch { padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); }
-.b-design-switch [data-slot="button"] { min-height: 31px; border: 0; background: transparent; }
-.b-design-switch [aria-current="page"] { background: var(--card); color: var(--primary); box-shadow: 0 1px 2px #00000014; }
+.b-app [data-slot="button"] { cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }
+.b-app [data-slot="button"]:disabled { cursor: not-allowed; opacity: 0.58; }
+.b-app [data-slot="button"]:focus-visible,
+.b-app [data-slot="sidebar-menu-button"]:focus-visible,
+.b-app [data-slot="select-trigger"]:focus-visible,
+.b-app select:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; box-shadow: none; }
 .b-app [data-slot="button"][data-size="default"] { min-height: 36px; padding-inline: 0.8rem; }
-.b-app [data-slot="button"][data-variant="default"]:hover { background: #828fff; }
-.b-app [data-slot="button"][data-variant="outline"] { background: var(--card); border-color: var(--border); }
-.b-app [data-slot="button"][data-variant="outline"]:hover { background: var(--muted); }
+.b-app [data-slot="button"][data-variant="default"]:hover:not(:disabled) { background: var(--action-primary-hover); }
+.b-app [data-slot="button"][data-variant="default"]:active:not(:disabled) { background: var(--action-primary-pressed); }
+.b-app [data-slot="button"][data-variant="outline"] { background: var(--card); border-color: var(--border-hover); }
+.b-app [data-slot="button"][data-variant="outline"]:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--focus-ring); }
+.b-app [data-slot="button"][data-variant="secondary"]:hover:not(:disabled),
+.b-app [data-slot="button"][data-variant="ghost"]:hover:not(:disabled) { background: var(--surface-hover); }
+.b-app [data-slot="button"][data-variant="destructive"] { border-color: var(--status-danger-border); background: var(--status-danger-bg); }
+.b-app [data-slot="button"][data-variant="destructive"]:hover:not(:disabled) { background: color-mix(in srgb, var(--status-danger-bg) 75%, var(--status-danger-border)); }
+.b-app [data-slot="button"][data-variant="destructive"]:focus-visible { outline-color: var(--focus-ring); }
+.b-app [data-slot="button"][aria-pressed="true"] { background: var(--sidebar-accent); color: var(--sidebar-accent-foreground); border-color: var(--primary); box-shadow: inset 2px 0 var(--primary); }
+.b-app [data-slot="button"][aria-pressed="true"]:hover { background: var(--sidebar-accent); }
 .b-app :is([data-slot="input"], [data-slot="textarea"], select) { border-radius: 8px; border-color: var(--input); background: var(--card); }
-.b-app :is([data-slot="input"], [data-slot="textarea"], select):focus-visible { outline: 2px solid color-mix(in srgb, var(--ring) 55%, transparent); outline-offset: 1px; }
+.b-app :is([data-slot="input"], [data-slot="textarea"], select):hover:not(:disabled) { border-color: var(--border-hover); }
+.b-app :is([data-slot="input"], [data-slot="textarea"], select):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-color: var(--focus-ring); box-shadow: none; }
+.b-app :is([data-slot="input"], [data-slot="textarea"], select)[aria-invalid="true"] { border-color: var(--status-danger-border); }
+.b-app [data-slot="alert"][data-variant="destructive"] { background: var(--status-danger-bg); border-color: var(--status-danger-border); }
+.b-app [data-slot="badge"][data-status="approved"],
+.b-app [data-slot="badge"][data-status="reviewed"] { background: var(--status-success-bg); color: var(--status-success-text); border-color: currentColor; }
+.b-app [data-slot="badge"][data-status="pending"],
+.b-app [data-slot="badge"][data-status="recheck"] { background: var(--status-warning-bg); color: var(--status-warning-text); border-color: currentColor; }
+.b-app [data-slot="badge"][data-status="rejected"] { background: var(--status-danger-bg); color: var(--destructive); border-color: var(--status-danger-border); }
 .b-week-toolbar { padding-bottom: 0.8rem; border-bottom: 1px solid var(--border); }
 .b-metric-card, .b-review-entry, .review-people { background: var(--card); border-color: var(--border); box-shadow: inset 0 1px #ffffff0d; }
 .b-metric-card strong { display: block; margin-top: 0.3rem; letter-spacing: -0.04em; }

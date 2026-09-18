@@ -75,6 +75,7 @@ function Status({
 }) {
   return (
     <Badge
+      data-status={value}
       variant={
         value === "approved"
           ? "default"
@@ -395,7 +396,7 @@ export function CompLeave({
                           </Button>
                           <Button
                             size="sm"
-                            variant="ghost"
+                            variant="destructive"
                             onClick={() =>
                               recordAction("overtime", record.id, "reject")
                             }
@@ -407,7 +408,7 @@ export function CompLeave({
                       {record.status === "approved" && canApprove && (
                         <Button
                           size="sm"
-                          variant="ghost"
+                          variant="destructive"
                           onClick={() => {
                             setCancel({ kind: "overtime", id: record.id });
                             setCancelReason("");
@@ -420,7 +421,7 @@ export function CompLeave({
                         ["pending", "rejected"].includes(record.status) && (
                           <Button
                             size="sm"
-                            variant="ghost"
+                            variant="destructive"
                             onClick={() => {
                               if (confirm("이 신청을 삭제할까요?"))
                                 recordAction("overtime", record.id, "delete");
@@ -487,7 +488,7 @@ export function CompLeave({
                           </Button>
                           <Button
                             size="sm"
-                            variant="ghost"
+                            variant="destructive"
                             onClick={() =>
                               recordAction("leave", record.id, "reject")
                             }
@@ -499,7 +500,7 @@ export function CompLeave({
                       {record.status === "approved" && canApprove && (
                         <Button
                           size="sm"
-                          variant="ghost"
+                          variant="destructive"
                           onClick={() => {
                             setCancel({ kind: "leave", id: record.id });
                             setCancelReason("");
@@ -512,7 +513,7 @@ export function CompLeave({
                         ["pending", "rejected"].includes(record.status) && (
                           <Button
                             size="sm"
-                            variant="ghost"
+                            variant="destructive"
                             onClick={() => {
                               if (confirm("이 신청을 삭제할까요?"))
                                 recordAction("leave", record.id, "delete");

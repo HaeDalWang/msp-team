@@ -660,7 +660,7 @@ export function Schedule({
                     <Button
                       className="ml-auto"
                       size="sm"
-                      variant="ghost"
+                      variant="destructive"
                       disabled={busy}
                       onClick={() => removeHoliday(holiday.date)}
                     >

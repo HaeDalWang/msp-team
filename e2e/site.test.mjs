@@ -38,7 +38,7 @@ test('monthly digest uploads with CSP, streams analysis, edits, exports, preview
   const { page, base } = await browserFixture(t, 'user', { env: { MONTHLY_DIGEST_FUNCTION_NAME: 'test', MONTHLY_DIGEST_UPLOAD_ORIGIN: uploadOrigin }, monthlyDigestInvoke: invoke })
   let uploads = 0
   await page.route(uploadOrigin + '/**', async route => { uploads++; await route.fulfill({ status: 204, headers: { 'access-control-allow-origin': base } }) })
-  await page.goto(base + '/#monthly-digest')
+  await page.goto(base + '/?design=a#monthly-digest')
   await expect(page.getByRole('heading', { name: "AWS 월간 What's New" })).toBeVisible()
   await expect(page.locator('.digest-workspace')).toHaveCSS('display', 'grid')
   const desktopLayout = await page.evaluate(() => {
@@ -92,7 +92,7 @@ test('narrow review preserves comments across people and weeks and exposes navig
   const { page, base, request } = await browserFixture(t)
   await request('/api/reviews', { method: 'PUT', body: review() })
   await page.setViewportSize({ width: 800, height: 1000 })
-  await page.goto(base + '/?week=2026-09-07#review')
+  await page.goto(base + '/?design=a&week=2026-09-07#review')
   await page.locator('#review-person-select').selectOption('user')
   await page.locator('#review-comments-toggle').click()
   await expect(page.locator('#comment-draft')).toBeVisible()
@@ -123,7 +123,7 @@ test('narrow review preserves comments across people and weeks and exposes navig
 
 test('engineer edits profile from settings and values survive reload', async (t) => {
   const { page, base } = await browserFixture(t)
-  await page.goto(base + '/#review')
+  await page.goto(base + '/?design=a#review')
   await page.locator('#settings-toggle').click()
   await page.locator('#profile-open').click()
   await page.locator('#profile-email').fill('myself@example.com')
@@ -141,7 +141,7 @@ test('engineer edits profile from settings and values survive reload', async (t)
 
 test('calendar applies a date range and shows approved leave without overwriting it', async (t) => {
   const { page, base, pool, request } = await browserFixture(t, 'admin')
-  await page.goto(base + '/#schedule')
+  await page.goto(base + '/?design=a#schedule')
   const cell = page.locator('[data-user="user"]').first()
   const date = await cell.getAttribute('data-date')
   const endDate = date.slice(0, 8) + '03'
@@ -166,7 +166,7 @@ test('calendar applies a date range and shows approved leave without overwriting
 
 test('light theme persists, editor fills width, calendar quick-save informs review absence', async (t) => {
   const { page, base, request } = await browserFixture(t, 'admin')
-  await page.goto(base + '/?week=2026-09-07#edit')
+  await page.goto(base + '/?design=a&week=2026-09-07#edit')
   await page.locator('#settings-toggle').click()
   await page.locator('#theme-toggle').click()
   await page.reload()
@@ -218,7 +218,7 @@ test('light theme persists, editor fills width, calendar quick-save informs revi
 test('feedback: continuous font drag, all reviews, editor layout and customer scroll', async (t) => {
   const { page, base, request, pool } = await browserFixture(t, 'admin')
   await request('/api/reviews', { method: 'PUT', body: review({ ticketsNew: 1024, ticketsDone: 1024 }) })
-  await page.goto(base + '/?week=2026-09-07#review')
+  await page.goto(base + '/?design=a&week=2026-09-07#review')
   await page.locator('[data-person="user"]').click()
   await page.locator('#settings-toggle').click()
   const slider = page.locator('#font-scale-input')
@@ -257,7 +257,7 @@ test('feedback: continuous font drag, all reviews, editor layout and customer sc
 
 test('browser review save, reload, week navigation, comment, completion and monthly export', async (t) => {
   const { page, base, context, token } = await browserFixture(t)
-  await page.goto(base + '/?week=2026-09-07#edit')
+  await page.goto(base + '/?design=a&week=2026-09-07#edit')
   await expect(page.locator('[data-field="workHighlights"]')).toHaveValue('')
   const originalText =
     '<img src=x onerror="window.exploited=true">고객사 기술지원\n\n다음 문단'
@@ -312,7 +312,7 @@ test('browser review save, reload, week navigation, comment, completion and mont
 
 test('browser customer edit, transfer, dynamic part and schedule note persistence', async (t) => {
   const { page, base, request } = await browserFixture(t, 'admin')
-  await page.goto(base + '/#customers')
+  await page.goto(base + '/?design=a#customers')
   await page.locator('[data-add-customer="admin"]').click()
   await page.locator('[data-draft="name"]').fill('브라우저 고객사')
   await page.locator('[data-draft="note"]').fill('메모 내용')
@@ -399,7 +399,7 @@ test('browser customer edit, transfer, dynamic part and schedule note persistenc
 
 test('browser overtime and leave balances reflect approval', async (t) => {
   const { page, base, request, context, token } = await browserFixture(t)
-  await page.goto(base + '/#comp-leave')
+  await page.goto(base + '/?design=a#comp-leave')
   assert.ok(await page.locator('.compact-time').evaluate((element) => {
     const parent = element.getBoundingClientRect()
     const estimate = element.querySelector('.calculated-hours').getBoundingClientRect()
@@ -448,7 +448,7 @@ test('browser overtime and leave balances reflect approval', async (t) => {
 
 test('browser failed saves keep input, pending saves lock fields and changing day protects notes', async (t) => {
   const { page, base } = await browserFixture(t)
-  await page.goto(base + '/#comp-leave')
+  await page.goto(base + '/?design=a#comp-leave')
   await page.locator('[data-leave="date"]').fill('2026-09-10')
   await page.locator('[data-leave="hours"]').selectOption('4')
   await page.locator('[data-leave="reason"]').fill('실패해도 남을 사유')

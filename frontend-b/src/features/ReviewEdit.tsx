@@ -192,10 +192,10 @@ export function ReviewEdit({
           지난주 불러오기
         </Button>
         <Button variant="outline" disabled={busy} onClick={() => save("draft")}>
-          임시 저장
+          {busy ? "저장 중…" : "임시 저장"}
         </Button>
         <Button disabled={busy} onClick={() => save("submitted")}>
-          제출
+          {busy ? "처리 중…" : "제출"}
         </Button>
       </div>
       {error && (
@@ -236,6 +236,7 @@ export function ReviewEdit({
       <div className="flex items-center gap-2">
         <Button
           variant={layout === "list" ? "secondary" : "outline"}
+          aria-pressed={layout === "list"}
           onClick={() => {
             setLayout("list");
             saveEditorMode("list");
@@ -245,6 +246,7 @@ export function ReviewEdit({
         </Button>
         <Button
           variant={layout === "grid" ? "secondary" : "outline"}
+          aria-pressed={layout === "grid"}
           onClick={() => {
             setLayout("grid");
             saveEditorMode("grid");

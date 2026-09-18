@@ -607,7 +607,7 @@ function PartEditor({
       </Button>
       <Button
         size="sm"
-        variant="ghost"
+        variant="destructive"
         disabled={busy || occupied}
         onClick={() => onDelete(part)}
       >

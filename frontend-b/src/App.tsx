@@ -173,10 +173,32 @@ function App() {
     save("msp-theme", theme);
     save("msp-font-scale", String(fontScale));
   }, [theme, fontScale]);
-  useEffect(() => save("msp-design", "b"), []);
   useEffect(() => {
     api<User>("/api/me")
-      .then(setUser)
+      .then((value) => {
+        setUser(value);
+        try {
+          const destination = sessionStorage.getItem("msp-return-to");
+          sessionStorage.removeItem("msp-return-to");
+          if (destination) {
+            const url = new URL(destination, location.origin);
+            const targetWeek = url.searchParams.get("week");
+            if (
+              url.origin === location.origin &&
+              url.pathname === "/b/" &&
+              url.searchParams.size === 1 &&
+              validWeek(targetWeek) &&
+              pages.some((page) => `#${page.id}` === url.hash) &&
+              `${url.pathname}${url.search}${url.hash}` !==
+                `${location.pathname}${location.search}${location.hash}`
+            ) {
+              location.replace(`${url.pathname}${url.search}${url.hash}`);
+            }
+          }
+        } catch {
+          /* storage may be unavailable */
+        }
+      })
       .catch((e) => setAuthError(e.status === 401 ? "" : e.message))
       .finally(() => setChecked(true));
   }, []);
@@ -212,12 +234,6 @@ function App() {
     if (next === view) return;
     if (!canLeave()) return;
     setDirty(false);
-    const page = pages.find((item) => item.id === next);
-    if (!page?.ready) {
-      skipUnload.current = true;
-      location.href = `/?week=${encodeURIComponent(week)}&design=a#${next}`;
-      return;
-    }
     history.pushState(null, "", `/b/?week=${encodeURIComponent(week)}#${next}`);
     setView(next);
   }
@@ -230,12 +246,6 @@ function App() {
       "",
       `/b/?week=${encodeURIComponent(next)}#${view}`,
     );
-  }
-  function switchDesign() {
-    if (!canLeave()) return;
-    save("msp-design", "a");
-    skipUnload.current = true;
-    location.href = `/?week=${encodeURIComponent(week)}#${view}`;
   }
   function login() {
     try {
@@ -335,15 +345,11 @@ function App() {
                         <SidebarMenuItem key={item.id}>
                           <SidebarMenuButton
                             isActive={view === item.id}
+                            aria-current={view === item.id ? "page" : undefined}
                             onClick={() => navigate(item.id)}
                           >
                             <item.icon />
                             <span>{item.name}</span>
-                            {!item.ready && (
-                              <span className="ml-auto text-xs text-muted-foreground">
-                                기존 화면
-                              </span>
-                            )}
                           </SidebarMenuButton>
                         </SidebarMenuItem>
                       ))}
@@ -389,14 +395,6 @@ function App() {
             <div className="min-w-0">
               <p className="b-page-kicker">CSG MSP / {page.group}</p>
               <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{page.name}</h1>
-            </div>
-            <div className="b-design-switch ml-auto flex items-center gap-1">
-              <Button variant="outline" onClick={switchDesign}>
-                기존 디자인 A
-              </Button>
-              <Button aria-current="page" variant="secondary">
-                새 디자인 B
-              </Button>
             </div>
           </header>
           <div className="b-content flex min-w-0 flex-col gap-6 p-4 md:p-7">
@@ -456,14 +454,6 @@ function App() {
             {view === "monthly-digest" && (
               <MonthlyDigest onDirty={setDirty} />
             )}
-            {!page.ready && (
-              <Alert>
-                <AlertDescription>
-                  이 페이지의 새 디자인은 준비 중입니다. 메뉴를 선택하면 기존
-                  화면에서 업무를 계속할 수 있습니다.
-                </AlertDescription>
-              </Alert>
-            )}
           </div>
         </SidebarInset>
       </SidebarProvider>
@@ -489,12 +479,14 @@ function App() {
             <div className="flex gap-2">
               <Button
                 variant={theme === "light" ? "secondary" : "outline"}
+                aria-pressed={theme === "light"}
                 onClick={() => setTheme("light")}
               >
                 라이트
               </Button>
               <Button
                 variant={theme === "dark" ? "secondary" : "outline"}
+                aria-pressed={theme === "dark"}
                 onClick={() => setTheme("dark")}
               >
                 다크

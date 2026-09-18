@@ -57,6 +57,7 @@ function initialPerson() {
 function Status({ status }: { status: Review["status"] }) {
   return (
     <Badge
+      data-status={status}
       variant={
         status === "reviewed"
           ? "default"
@@ -303,12 +304,14 @@ export function Reviews({
         <div className="flex flex-wrap gap-2">
           <Button
             variant={filter === "all" ? "secondary" : "outline"}
+            aria-pressed={filter === "all"}
             onClick={() => setFilter("all")}
           >
             전체
           </Button>
           <Button
             variant={filter === "missing" ? "secondary" : "outline"}
+            aria-pressed={filter === "missing"}
             onClick={() => setFilter("missing")}
           >
             미작성
@@ -316,6 +319,7 @@ export function Reviews({
           {["admin", "lead"].includes(user.role) && (
             <Button
               variant={filter === "submitted" ? "secondary" : "outline"}
+              aria-pressed={filter === "submitted"}
               onClick={() => setFilter("submitted")}
             >
               미검토
@@ -419,6 +423,7 @@ export function Reviews({
               <Button
                 key={e.id}
                 variant={selected?.id === e.id ? "secondary" : "ghost"}
+                aria-pressed={selected?.id === e.id}
                 className="w-full justify-start"
                 onClick={() => {
                   setSelectedId(e.id);

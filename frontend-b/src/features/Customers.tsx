@@ -319,7 +319,7 @@ export function Customers({
           <option value="inactive">종료</option>
           <option value="all">전체</option>
         </select>
-        <Button variant="outline" onClick={() => setGrouped((x) => !x)}>
+        <Button variant="outline" aria-pressed={grouped} onClick={() => setGrouped((x) => !x)}>
           {grouped ? "고객사별 보기" : "담당자별 보기"}
         </Button>
         <Button className="ml-auto" onClick={() => open()}>
@@ -350,11 +350,7 @@ export function Customers({
                 </TableHeader>
                 <TableBody>
                   {group.rows.map((row) => (
-                    <TableRow
-                      key={row.id}
-                      className="cursor-pointer"
-                      onClick={() => open(row)}
-                    >
+                    <TableRow key={row.id}>
                       <TableCell>
                         <Button
                           variant="link"
@@ -510,7 +506,7 @@ export function Customers({
                           {(h.authorId === user.userId ||
                             user.role === "admin") && (
                             <Button
-                              variant="ghost"
+                              variant="destructive"
                               size="sm"
                               className="ml-auto"
                               disabled={busy}

@@ -20,13 +20,12 @@
 cp .env.example .env
 ```
 
-`.env` 파일에서 아래 세 가지만 바꿉니다.
+`.env` 파일에서 아래 세 값을 바꿉니다. B 화면은 기본으로 켜져 있습니다.
 
 ```dotenv
 POSTGRES_PASSWORD=안전한-DB-비밀번호
 SESSION_SECRET=openssl-rand-hex-32로-만든-긴-문자열
 LOCAL_DEV_USER_ID=seed.json에-있는-내-사용자-id
-DESIGN_B_ENABLED=true
 ```
 
 `SESSION_SECRET`은 터미널에서 `openssl rand -hex 32`를 실행해 만들 수 있습니다. `LOCAL_DEV_USER_ID`는 **내 컴퓨터에서만** 쓰는 임시 로그인 설정입니다.
@@ -36,15 +35,15 @@ docker compose up --build -d --wait
 curl --fail http://localhost:3000/health
 ```
 
-`{"ok":true}`가 나오면 브라우저에서 [http://localhost:3000](http://localhost:3000)을 여세요. 새 화면은 [http://localhost:3000/b/](http://localhost:3000/b/)입니다. 컨테이너를 멈추려면 `docker compose down`을 실행합니다.
+`{"ok":true}`가 나오면 브라우저에서 [http://localhost:3000](http://localhost:3000)을 여세요. B 화면이 기본으로 열립니다. 컨테이너를 멈추려면 `docker compose down`을 실행합니다.
 
-## 두 가지 화면
+## 화면과 레거시 코드
 
-기존 화면(A)과 새 화면(B)은 같은 데이터와 같은 권한을 사용합니다. 화면만 다릅니다.
+B가 기본 화면입니다. 기존 A 코드는 비상 복구와 이전 기록 확인을 위해 남겨 둡니다. 두 화면은 같은 데이터와 같은 권한을 사용합니다.
 
-- `DESIGN_B_ENABLED=true`: `/b/`에서 새 화면(B)을 엽니다.
-- `DESIGN_B_ENABLED=false`: 새 화면을 숨기고 기존 화면(A)으로 돌려보냅니다.
-- 운영에서는 B를 사용하려면 `.env`에 `DESIGN_B_ENABLED=true`를 넣습니다.
+- `/`와 `/b/`: B 화면
+- `/?design=a`: 레거시 A 화면
+- `DESIGN_B_ENABLED=false`: 비상 롤백 시 A를 기본 화면으로 사용
 
 ## Slack 로그인은 언제 필요한가요?
 

@@ -16,7 +16,7 @@ async function browserFixture(t, user = 'user', options = {}) {
   return { ...f, page }
 }
 
-test('B reads the same review and customer records and switches to A', async t => {
+test('B reads the same review and customer records as legacy A', async t => {
   const { page, base, request } = await browserFixture(t)
   await request('/api/reviews', { method: 'PUT', body: review({ workHighlights: '긴급 장애 대응과 고객사 복구' }) })
   await page.goto(base + '/b/?week=2026-09-07#review')
@@ -49,23 +49,46 @@ test('B reads the same review and customer records and switches to A', async t =
   await page.screenshot({ path: '/tmp/msp-design-b-customers-mobile.png', fullPage: true })
   const data = await (await request('/api/customers')).json()
   assert.ok(data.owners.some(owner => owner.customers.some(customer => customer.name === 'B 화면 고객사')))
-  await page.getByRole('button', { name: '기존 디자인 A' }).click()
-  await expect(page).toHaveURL(/\/?\?week=2026-09-07#customers$/)
+  await page.goto(base + '/?design=a&week=2026-09-07#customers')
+  await expect(page).toHaveURL(/\/?\?design=a&week=2026-09-07#customers$/)
   await expect(page.getByText('B 화면 고객사').first()).toBeVisible()
   await page.screenshot({ path: '/tmp/msp-design-b-customers.png', fullPage: true })
 })
 
-test('A offers B on built pages and restores a B login destination', async t => {
+test('B is the default and restores a login destination despite old A preference', async t => {
   const { page, base } = await browserFixture(t)
   await page.goto(base + '/?week=2026-09-07#review')
-  await page.getByRole('button', { name: '새 디자인 B' }).click()
   await expect(page).toHaveURL(/\/b\/\?week=2026-09-07#review$/)
+  await expect(page.getByRole('button', { name: '기존 디자인 A' })).toHaveCount(0)
   await page.evaluate(() => { sessionStorage.setItem('msp-return-to', '/b/?week=2026-09-07#customers'); localStorage.setItem('msp-design', 'a') })
   await page.goto(base + '/')
   await expect(page).toHaveURL(/\/b\/\?week=2026-09-07#customers$/)
 })
 
-test('B editor saves to the shared API and guards an unsaved design switch', async t => {
+test('B buttons, selected views, and keyboard focus have distinct states', async t => {
+  const { page, base } = await browserFixture(t)
+  await page.goto(base + '/#edit')
+  await expect(page).toHaveURL(/\/b\/#edit$/)
+  const submit = page.getByRole('button', { name: '제출', exact: true })
+  const normal = await submit.evaluate(element => getComputedStyle(element).backgroundColor)
+  await submit.hover()
+  await expect.poll(() => submit.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe(normal)
+  await page.getByRole('button', { name: '세로로 쓰기' }).click()
+  await expect(page.getByRole('button', { name: '세로로 쓰기' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: '나란히 쓰기' })).toHaveAttribute('aria-pressed', 'false')
+  await page.getByRole('button', { name: '이번 주' }).focus()
+  assert.ok(Number.parseFloat(await page.getByRole('button', { name: '이번 주' }).evaluate(element => getComputedStyle(element).outlineWidth)) >= 2)
+  await page.getByLabel('주요 업무 현황').focus()
+  assert.ok(Number.parseFloat(await page.getByLabel('주요 업무 현황').evaluate(element => getComputedStyle(element).outlineWidth)) >= 2)
+  await page.screenshot({ path: '/tmp/msp-b-controls-dark.png', fullPage: true })
+  await page.getByRole('button', { name: '화면 설정' }).click()
+  await page.getByRole('button', { name: '라이트' }).click()
+  await page.getByRole('button', { name: 'Close' }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.screenshot({ path: '/tmp/msp-b-controls-light.png', fullPage: true })
+})
+
+test('B editor saves to the shared API and guards unsaved navigation', async t => {
   const { page, base, request } = await browserFixture(t)
   await page.goto(base + '/b/?week=2026-09-07#edit')
   await page.getByLabel('주요 업무 현황').fill('B 회고 초안')
@@ -75,7 +98,7 @@ test('B editor saves to the shared API and guards an unsaved design switch', asy
   assert.equal(personal.entries.find(entry => entry.id === 'user').workHighlights, 'B 회고 초안')
   await page.getByLabel('주요 업무 현황').fill('저장 전 변경')
   page.once('dialog', dialog => dialog.dismiss())
-  await page.getByRole('button', { name: '기존 디자인 A' }).click()
+  await page.getByRole('button', { name: '담당 고객사' }).click()
   await expect(page).toHaveURL(/\/b\/\?week=2026-09-07#edit$/)
   await expect(page.getByLabel('주요 업무 현황')).toHaveValue('저장 전 변경')
 })
@@ -264,4 +287,6 @@ test('B is unavailable when disabled', async t => {
   assert.deepEqual(await status.json(), { bAvailable: false })
   const response = await request('/b/?week=2026-09-07', { user: null })
   assert.equal(response.url.endsWith('/?week=2026-09-07&design=a'), true)
+  const root = await request('/?week=2026-09-07', { user: null })
+  assert.equal(root.url.endsWith('/?week=2026-09-07'), true)
 })
